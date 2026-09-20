@@ -111,6 +111,36 @@ def crew_draft(request: Request, brief: str = Form(...)):
     return RedirectResponse(f"/crew/{pipe.rfx.rfx_id}", status_code=303)
 
 
+@app.post("/crew/run-e2e", response_class=HTMLResponse)
+def crew_run_e2e(request: Request, brief: str = Form(...)):
+    """One-click end-to-end: all five agents, then land on the full board."""
+    if len(brief.strip()) < 20:
+        return HTMLResponse(
+            "<div class='err'>Please describe the requirement in at least a couple of sentences.</div>",
+            status_code=400,
+        )
+    pipe = RFxPipeline()
+    try:
+        pipe.run_e2e(brief)
+    except Exception as exc:
+        return HTMLResponse(
+            f"<div class='err'>End-to-end run failed: {exc}</div>",
+            status_code=400,
+        )
+    _save(pipe)
+    return RedirectResponse(f"/crew/{pipe.rfx.rfx_id}", status_code=303)
+
+
+@app.post("/api/run-e2e")
+def api_run_e2e(brief: str = Form(...)):
+    pipe = RFxPipeline()
+    try:
+        snap = pipe.run_e2e(brief)
+    except Exception as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    _save(pipe)
+    return JSONResponse({"ok": True, "rfx_id": pipe.rfx.rfx_id if pipe.rfx else None, "snapshot": snap})
+
 @app.get("/crew/{rfx_id}", response_class=HTMLResponse)
 def crew_board(request: Request, rfx_id: str):
     pipe = _session(rfx_id)
@@ -201,38 +231,6 @@ def crew_ask(request: Request, rfx_id: str, question: str = Form(...)):
         result=result,
     )
 
-
-
-
-@app.post("/crew/run-e2e", response_class=HTMLResponse)
-def crew_run_e2e(request: Request, brief: str = Form(...)):
-    """One-click end-to-end: all five agents, then land on the full board."""
-    if len(brief.strip()) < 20:
-        return HTMLResponse(
-            "<div class='err'>Please describe the requirement in at least a couple of sentences.</div>",
-            status_code=400,
-        )
-    pipe = RFxPipeline()
-    try:
-        pipe.run_e2e(brief)
-    except Exception as exc:
-        return HTMLResponse(
-            f"<div class='err'>End-to-end run failed: {exc}</div>",
-            status_code=400,
-        )
-    _save(pipe)
-    return RedirectResponse(f"/crew/{pipe.rfx.rfx_id}", status_code=303)
-
-
-@app.post("/api/run-e2e")
-def api_run_e2e(brief: str = Form(...)):
-    pipe = RFxPipeline()
-    try:
-        snap = pipe.run_e2e(brief)
-    except Exception as exc:
-        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
-    _save(pipe)
-    return JSONResponse({"ok": True, "rfx_id": pipe.rfx.rfx_id if pipe.rfx else None, "snapshot": snap})
 
 @app.get("/crew/{rfx_id}/snapshot")
 def crew_snapshot(rfx_id: str):

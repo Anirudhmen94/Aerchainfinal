@@ -181,7 +181,7 @@ class RFxPipeline:
         """Full demo in one shot: draft → dispatch → parse → normalize → ask."""
         self.run(brief, vendor_dir=vendor_dir, skip_dispatch=False, **draft_kwargs)
         qs = questions or [
-            "What if we split the award, cheapest per line, but only among vendors who cleared the quality questionnaire?",
+            "What if we split award cheapest per line, but only among vendors who cleared the quality questionnaire?",
             "Give a defensible award recommendation with totals and the main risks.",
         ]
         for q in qs:
