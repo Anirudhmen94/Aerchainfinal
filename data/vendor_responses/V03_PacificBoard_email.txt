@@ -1,0 +1,45 @@
+From: Priya Nair <tenders@pacificboard.com>
+To: procurement@buyer.example
+Subject: Re: RFX-CORR-2026-001 — PacificBoard quote
+Date: Mon, 15 Sep 2026 10:22:14 +0530
+
+Hello team,
+
+Thanks for inviting PacificBoard Inc to RFX-CORR-2026-001 (corrugated packaging basket).
+
+Our offer (INR, ex-works Chennai; freight to Pune extra — we can quote freight separately if you share weekly volumes):
+
+Standard cartons:
+- L01 3-ply 300x200x150: Rs 17.90 / ea
+- L02 3-ply 400x300x200: Rs 25.40 / ea
+- L03 3-ply 500x400x300: Rs 36.80 / ea
+- L04 5-ply 300x200x150: Rs 27.10 / ea
+- L05 5-ply 400x300x200: Rs 39.20 / ea
+- L06 5-ply 500x400x300: Rs 54.50 / ea
+
+Heavy duty: L07 Rs 115 / ea, L08 Rs 168 / ea.
+
+Mailers L09/L10: 13.20 and 20.40 respectively.
+Pallet tray L11: 82.00 ea.
+Corner guards: L12 @ 4.10 ea, L13 @ 5.60 ea.
+Sheets L14/L15: 11.20 / 16.90 per sheet.
+Tubes L16/L17: 8.20 / 12.80 ea.
+Partitions L18/L19/L20: 90 / 132 / 198.
+Telescopic L21/L22: 62 / 57. Archive L23/L24: 49 / 68.
+Consumables: kraft tape L25 Rs 36/roll; bubble L26 Rs 405/roll; foam L27 Rs 33/sheet;
+PP strap L28 Rs 178/kg; shrink L29 Rs 840/roll; wooden pallet L30 Rs 610/ea.
+
+Questionnaire:
+Q1 ISO 9001 — Yes (site PB-CHN-02)
+Q2 Lead time — 16 calendar days
+Q3 VMI — Yes for top 8 SKUs after 3 months
+Q4 MOQ — 750 ea
+Q5 FSC — Available, +5%
+Q6 Defect rate — 0.55%
+Q7 Returns — Yes within 14 days if unopened / QC failure documented
+
+Validity 30 days. Net 45 accepted.
+
+Regards,
+Priya Nair
+PacificBoard Inc

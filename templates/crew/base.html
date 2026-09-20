@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Aerchain RFx Crew{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    .err { @apply bg-red-50 text-red-800 border border-red-200 rounded p-3; }
+    .card { @apply bg-white border border-slate-200 rounded-xl shadow-sm p-5; }
+    .btn { @apply inline-flex items-center gap-2 rounded-lg bg-slate-900 text-white px-4 py-2 text-sm font-medium hover:bg-slate-700; }
+    .btn-sec { @apply inline-flex items-center gap-2 rounded-lg bg-white border border-slate-300 text-slate-800 px-4 py-2 text-sm font-medium hover:bg-slate-50; }
+    .chip { @apply inline-block text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700; }
+    table.matrix td, table.matrix th { @apply border border-slate-200 px-2 py-1 text-xs; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+  <header class="border-b border-slate-200 bg-white">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+      <a href="/" class="font-semibold tracking-tight">Aerchain <span class="text-indigo-600">RFx Crew</span></a>
+      <nav class="text-sm text-slate-500 flex gap-4">
+        <span class="chip">Drafter</span>
+        <span class="chip">Dispatcher</span>
+        <span class="chip">Parser</span>
+        <span class="chip">Normalizer</span>
+        <span class="chip">Analyst</span>
+      </nav>
+    </div>
+  </header>
+  <main class="max-w-6xl mx-auto px-4 py-8">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

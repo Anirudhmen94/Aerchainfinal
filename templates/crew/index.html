@@ -1,0 +1,44 @@
+{% extends "crew/base.html" %}
+{% block title %}Brief → RFx Crew{% endblock %}
+{% block content %}
+<section class="grid md:grid-cols-5 gap-6">
+  <div class="md:col-span-3 card">
+    <h1 class="text-2xl font-semibold mb-2">Describe what you need</h1>
+    <p class="text-slate-600 text-sm mb-4">
+      The crew drafts an RFx, dispatches stub emails, ingests sample vendor files,
+      normalises to INR/piece, then answers natural-language questions.
+    </p>
+    <form method="post" action="/crew/draft" class="space-y-3">
+      <textarea name="brief" rows="8" class="w-full rounded-lg border border-slate-300 p-3 text-sm" required>{{ example_brief }}</textarea>
+      <button class="btn" type="submit">1 · Draft RFx</button>
+    </form>
+  </div>
+  <div class="md:col-span-2 space-y-4">
+    <div class="card">
+      <h2 class="font-medium mb-2">Recent events</h2>
+      {% if events %}
+      <ul class="space-y-2 text-sm">
+        {% for e in events %}
+        <li>
+          <a class="text-indigo-600 hover:underline" href="/crew/{{ e.id }}">{{ e.title }}</a>
+          <div class="text-xs text-slate-500">{{ e.id }} · step {{ e.step }} · {{ e.vendors }} vendors</div>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="text-sm text-slate-500">No events yet — draft a brief to start.</p>
+      {% endif %}
+    </div>
+    <div class="card text-sm text-slate-600">
+      <h2 class="font-medium text-slate-900 mb-2">Pipeline</h2>
+      <ol class="list-decimal list-inside space-y-1">
+        <li>RFx Drafter</li>
+        <li>Vendor Dispatcher (SMTP stubbed)</li>
+        <li>Document Parser</li>
+        <li>Normalizer (FX + UOM)</li>
+        <li>Analyst (NL Q&amp;A)</li>
+      </ol>
+    </div>
+  </div>
+</section>
+{% endblock %}

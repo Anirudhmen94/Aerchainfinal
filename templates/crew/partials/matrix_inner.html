@@ -1,0 +1,42 @@
+{% if pipe.comparison %}
+{% set vendors = pipe.comparison.cells | map(attribute='vendor_id') | unique | list | sort %}
+{% set lines = pipe.rfx.line_items %}
+<table class="matrix w-full">
+  <thead>
+    <tr>
+      <th>Line</th>
+      {% for v in vendors %}<th>{{ v }}</th>{% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for li in lines %}
+    <tr>
+      <td class="font-medium">{{ li.line_id }}</td>
+      {% for v in vendors %}
+        {% set ns = namespace(cell=None) %}
+        {% for c in pipe.comparison.cells if c.line_id == li.line_id and c.vendor_id == v %}
+          {% set ns.cell = c %}
+        {% endfor %}
+        <td>
+          {% if ns.cell and ns.cell.unit_price_inr is not none %}
+            ₹{{ '%.2f'|format(ns.cell.unit_price_inr) }}
+            <div class="text-[10px] text-slate-500">{{ ns.cell.status }}</div>
+          {% elif ns.cell %}
+            <span class="text-amber-700">{{ ns.cell.status }}</span>
+          {% else %}—{% endif %}
+        </td>
+      {% endfor %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if pipe.comparison.vendor_flags %}
+<ul class="mt-2 text-xs text-slate-600 space-y-1">
+  {% for vid, flags in pipe.comparison.vendor_flags.items() %}
+    {% if flags %}<li><strong>{{ vid }}:</strong> {{ flags|join('; ') }}</li>{% endif %}
+  {% endfor %}
+</ul>
+{% endif %}
+{% else %}
+<p class="text-sm text-slate-500">Matrix not built yet.</p>
+{% endif %}

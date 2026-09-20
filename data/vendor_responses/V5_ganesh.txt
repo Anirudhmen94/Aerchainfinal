@@ -1,0 +1,10 @@
+From: ganesh.pp@example
+Subject: Re: RFQ
+
+₹54/kg for the 5-ply, 51 for the 3-ply, rest same as last year, freight extra.
+
+Rough map:
+L01: 51/kg
+L02: 54/kg
+L04: 51/kg
+L07: 51/kg

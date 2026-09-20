@@ -1,0 +1,38 @@
+Line#,Item Description,Unit Price (INR),UOM,Remarks
+1,3-ply RSC carton 300x200x150 mm,19.25,ea,
+2,3-ply RSC carton 400x300x200 mm,27.10,ea,
+3,3-ply RSC carton 500x400x300 mm,39.00,ea,
+4,5-ply RSC carton 300x200x150 mm,2950,per 100 pcs,bulk pack pricing
+5,5-ply RSC carton 400x300x200 mm,4120,per 100 pcs,
+6,5-ply RSC carton 500x400x300 mm,5750,per 100 pcs,
+7,7-ply heavy RSC 600x500x400 mm,122.00,ea,MOQ 200
+8,7-ply heavy RSC 800x600x500 mm,,,NOT QUOTED - capacity constraint
+9,3-ply die-cut mailer 250x200x50 mm,14.20,ea,
+10,5-ply die-cut mailer 350x250x80 mm,22.00,ea,
+11,Corrugated pallet tray 1200x800 mm,89.50,ea,
+12,Corner guard L-profile 600 mm,430,per 100 pcs,
+13,Corner guard L-profile 900 mm,610,per 100 pcs,
+14,3-ply corrugated sheet 1200x800 mm,12.10,sheet,
+15,5-ply corrugated sheet 1200x800 mm,18.00,sheet,
+18,6-cell partition insert 3-ply,96.50,ea,lines 16-17 skipped
+19,12-cell partition insert 3-ply,142.00,ea,
+20,24-cell partition insert 5-ply,215.00,ea,
+21,Telescopic outer 400x300x200 3-ply,66.00,ea,
+22,Telescopic inner 400x300x200 3-ply,61.00,ea,
+23,Archive box 400x300x250 3-ply,53.50,ea,
+24,Archive box 400x300x250 5-ply,73.00,ea,
+25,Kraft paper tape 48mm x 100m,39.00,roll,
+26,Bubble wrap 1.2m x 50m,430.00,roll,
+27,PE foam sheet 5mm 1200x800,36.00,sheet,
+28,PP strapping band 12mm,190.00,kg,sold by weight only
+29,Shrink film 500mm x 300m,880.00,roll,
+30,Wooden pallet 1200x800 EUR,650.00,ea,
+
+QUESTIONNAIRE RESPONSES
+ISO 9001 certified,Yes
+Lead time (days),11
+VMI / consignment,No — not at this time
+MOQ per SKU,1000 ea (500 for mailers)
+FSC-certified board,Not available
+Defect rate last 12 months,0.9%
+Returns for quality failures,Credit note within 10 days

@@ -1,0 +1,20 @@
+{
+  "vendor_id": "V1",
+  "notes": "Priced per 100 pcs. Freight included. 3% early-pay discount in notes.",
+  "lines": [
+    {"line_id": "L01", "unit_price": 1850, "currency": "INR", "uom": "per 100"},
+    {"line_id": "L02", "unit_price": 4200, "currency": "INR", "uom": "per 100"},
+    {"line_id": "L03", "unit_price": 6100, "currency": "INR", "uom": "per 100"},
+    {"line_id": "L04", "unit_price": 2100, "currency": "INR", "uom": "per 100"},
+    {"line_id": "L05", "unit_price": 8800, "currency": "INR", "uom": "per 100"},
+    {"line_id": "L06", "unit_price": 5400, "currency": "INR", "uom": "per 100"},
+    {"line_id": "L07", "unit_price": 1600, "currency": "INR", "uom": "per 100"},
+    {"line_id": "L08", "unit_price": 5700, "currency": "INR", "uom": "per 100"}
+  ],
+  "questionnaire_answers": [
+    {"id": "Q1", "answer": "Yes — FSC Mixed Credit"},
+    {"id": "Q2", "answer": "ISO 22000 + BRC Packaging Grade A"},
+    {"id": "Q3", "answer": "18-22 working days"},
+    {"id": "Q4", "answer": "Yes, 2 weeks of peak buffer on agreed SKUs"}
+  ]
+}

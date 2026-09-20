@@ -1,11 +1,7 @@
 .env
-.env.*
-!.env.example
-data/store/
 __pycache__/
 *.pyc
 .venv/
+data/outbox/*
+!data/outbox/.gitkeep
 .vercel/
-uploads/
-terminals/
-*.egg-info/

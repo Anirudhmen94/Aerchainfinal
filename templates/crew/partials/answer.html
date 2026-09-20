@@ -1,0 +1,17 @@
+<article class="border border-slate-200 rounded-lg p-3 bg-slate-50">
+  <div class="text-xs text-slate-500 mb-1">Q</div>
+  <div class="font-medium text-sm mb-2">{{ question }}</div>
+  <div class="text-sm text-slate-800 whitespace-pre-wrap">{{ result.answer }}</div>
+  {% if result.tool %}<div class="mt-1"><span class="chip">tool: {{ result.tool }}</span></div>{% endif %}
+  {% if result.caveats %}
+  <ul class="mt-2 text-xs text-amber-800 list-disc list-inside">
+    {% for c in result.caveats %}<li>{{ c }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if result.data %}
+  <details class="mt-2 text-xs">
+    <summary class="cursor-pointer text-slate-600">Data used</summary>
+    <pre class="mt-1 overflow-auto bg-white border border-slate-100 rounded p-2">{{ result.data }}</pre>
+  </details>
+  {% endif %}
+</article>

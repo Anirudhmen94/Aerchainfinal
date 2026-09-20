@@ -1,0 +1,16 @@
+{% if pipe.quotes %}
+<ul class="space-y-2 text-sm">
+  {% for q in pipe.quotes %}
+  <li class="border border-slate-100 rounded-lg p-2 flex justify-between gap-2">
+    <div>
+      <span class="font-medium">{{ q.vendor_id }}</span>
+      <span class="chip">{{ q.source_format }}</span>
+      <div class="text-xs text-slate-500">{{ q.lines|length }} rows · confidence {{ '%.2f'|format(q.confidence) }}</div>
+    </div>
+    <div class="text-xs text-slate-500 max-w-xs truncate">{{ q.notes }}</div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="text-sm text-slate-500">No quotes ingested yet.</p>
+{% endif %}

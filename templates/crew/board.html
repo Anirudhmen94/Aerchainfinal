@@ -1,0 +1,103 @@
+{% extends "crew/base.html" %}
+{% block title %}{{ rfx.title }} · Crew{% endblock %}
+{% block content %}
+<div class="mb-6 flex flex-wrap items-start justify-between gap-3">
+  <div>
+    <div class="text-xs text-slate-500">{{ rfx.rfx_id }} · step <span class="chip">{{ pipe.step }}</span></div>
+    <h1 class="text-2xl font-semibold">{{ rfx.title }}</h1>
+    <p class="text-sm text-slate-600 mt-1 max-w-3xl whitespace-pre-wrap">{{ rfx.scope[:400] }}{% if rfx.scope|length > 400 %}…{% endif %}</p>
+  </div>
+  <a class="btn-sec" href="/">← New brief</a>
+</div>
+
+<div class="grid lg:grid-cols-2 gap-5">
+  <!-- RFx summary -->
+  <section class="card">
+    <h2 class="font-medium mb-3">RFx · {{ rfx.line_items|length }} lines · {{ rfx.vendors|length }} vendors</h2>
+    <div class="overflow-auto max-h-64">
+      <table class="matrix w-full">
+        <thead><tr><th>ID</th><th>Description</th><th>Qty</th></tr></thead>
+        <tbody>
+        {% for li in rfx.line_items %}
+          <tr><td>{{ li.line_id }}</td><td>{{ li.description }}</td><td>{{ li.qty }} {{ li.uom }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <details class="mt-3 text-sm">
+      <summary class="cursor-pointer text-slate-600">Terms &amp; questionnaire</summary>
+      <p class="mt-2 whitespace-pre-wrap text-slate-700">{{ rfx.terms }}</p>
+      <ul class="mt-2 list-disc list-inside">
+        {% for q in rfx.questionnaire %}
+        <li>{{ q.id }}: {{ q.question }}{% if q.knockout %} <span class="chip">knockout</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </details>
+  </section>
+
+  <!-- Dispatch -->
+  <section class="card" id="dispatch-panel">
+    <h2 class="font-medium mb-2">2 · Dispatch</h2>
+    <p class="text-sm text-slate-600 mb-3">Writes stub cover emails to <code>data/outbox/</code> (no SMTP).</p>
+    <button class="btn"
+            hx-post="/crew/{{ rfx.rfx_id }}/dispatch"
+            hx-target="#dispatch-panel"
+            hx-swap="outerHTML">Send to {{ rfx.vendors|length }} vendors</button>
+    {% if pipe.dispatch_log %}
+    {% include "crew/partials/dispatch_inner.html" %}
+    {% endif %}
+  </section>
+
+  <!-- Ingest -->
+  <section class="card" id="ingest-panel">
+    <h2 class="font-medium mb-2">3 · Ingest vendor files</h2>
+    <p class="text-sm text-slate-600 mb-3">Load sample replies from <code>{{ vendor_dir }}</code> or upload your own.</p>
+    <form hx-post="/crew/{{ rfx.rfx_id }}/ingest"
+          hx-target="#quotes-panel"
+          hx-swap="innerHTML"
+          hx-encoding="multipart/form-data"
+          class="flex flex-wrap gap-2 items-center">
+      <input type="hidden" name="use_samples" value="yes" />
+      <button class="btn" type="submit">Ingest sample files</button>
+      <input type="file" name="files" multiple class="text-xs" />
+    </form>
+    <div id="quotes-panel" class="mt-4">
+      {% include "crew/partials/quotes_inner.html" %}
+    </div>
+  </section>
+
+  <!-- Normalize -->
+  <section class="card" id="normalize-panel">
+    <h2 class="font-medium mb-2">4 · Normalize</h2>
+    <p class="text-sm text-slate-600 mb-3">Convert to INR per piece; flag FX, UOM, and gaps.</p>
+    <button class="btn"
+            hx-post="/crew/{{ rfx.rfx_id }}/normalize"
+            hx-target="#matrix-panel"
+            hx-swap="innerHTML">Build comparison</button>
+    <div id="matrix-panel" class="mt-4 overflow-auto">
+      {% include "crew/partials/matrix_inner.html" %}
+    </div>
+  </section>
+</div>
+
+<!-- Analyst -->
+<section class="card mt-5">
+  <h2 class="font-medium mb-2">5 · Ask the Analyst</h2>
+  <p class="text-sm text-slate-600 mb-3">Try: “cheapest per line”, “vendor totals”, or “where are the gaps?”</p>
+  <form hx-post="/crew/{{ rfx.rfx_id }}/ask"
+        hx-target="#answers"
+        hx-swap="afterbegin"
+        class="flex gap-2">
+    <input name="question" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+           placeholder="Who is cheapest overall?" required />
+    <button class="btn" type="submit">Ask</button>
+  </form>
+  <div id="answers" class="mt-4 space-y-3">
+    {% for turn in pipe.chat|reverse %}
+      {% set question = turn.question %}
+      {% set result = turn %}
+      {% include "crew/partials/answer.html" %}
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}

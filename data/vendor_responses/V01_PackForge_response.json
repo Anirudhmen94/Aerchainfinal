@@ -1,0 +1,229 @@
+{
+  "vendor": "PackForge India",
+  "vendor_id": "V01",
+  "rfx_ref": "RFX-CORR-2026-001",
+  "currency": "INR",
+  "validity_days": 45,
+  "notes": "Prices DDP Pune DC, GST extra. Freight included for orders above INR 5 lakh.",
+  "questionnaire": {
+    "Is the manufacturing site currently ISO 9001 certified?": "Yes \u2014 cert QMS-PF-4419 valid through Dec 2027",
+    "Standard manufacturing lead time (calendar days) for this basket?": "14",
+    "Can you support VMI / consignment for top 10 SKUs?": "Yes, subject to 90-day rolling forecast",
+    "Minimum order quantity per SKU?": "500 ea",
+    "Can you supply FSC-certified board on request?": "Yes, +3.5% on board cost",
+    "Defect / rejection rate over the last 12 months (%)?": "0.42",
+    "Do you accept returns for verified quality failures within 14 days?": "Yes, full replacement"
+  },
+  "line_items": [
+    {
+      "line_id": "L01",
+      "description": "3-ply RSC carton 300x200x150 mm",
+      "unit_price_inr": 18.75,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L02",
+      "description": "3-ply RSC carton 400x300x200 mm",
+      "unit_price_inr": 26.4,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L03",
+      "description": "3-ply RSC carton 500x400x300 mm",
+      "unit_price_inr": 38.1,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L04",
+      "description": "5-ply RSC carton 300x200x150 mm",
+      "unit_price_inr": 28.2,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L05",
+      "description": "5-ply RSC carton 400x300x200 mm",
+      "unit_price_inr": 40.5,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L06",
+      "description": "5-ply RSC carton 500x400x300 mm",
+      "unit_price_inr": 56.8,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L07",
+      "description": "7-ply heavy RSC 600x500x400 mm",
+      "unit_price_inr": 118.0,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L08",
+      "description": "7-ply heavy RSC 800x600x500 mm",
+      "unit_price_inr": 172.5,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L09",
+      "description": "3-ply die-cut mailer 250x200x50 mm",
+      "unit_price_inr": 13.9,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L10",
+      "description": "5-ply die-cut mailer 350x250x80 mm",
+      "unit_price_inr": 21.25,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L11",
+      "description": "Corrugated pallet tray 1200x800 mm",
+      "unit_price_inr": 86.0,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L12",
+      "description": "Corner guard L-profile 600 mm",
+      "unit_price_inr": 4.35,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L13",
+      "description": "Corner guard L-profile 900 mm",
+      "unit_price_inr": 5.9,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L14",
+      "description": "3-ply corrugated sheet 1200x800 mm",
+      "unit_price_inr": 11.8,
+      "uom": "sheet",
+      "notes": ""
+    },
+    {
+      "line_id": "L15",
+      "description": "5-ply corrugated sheet 1200x800 mm",
+      "unit_price_inr": 17.6,
+      "uom": "sheet",
+      "notes": ""
+    },
+    {
+      "line_id": "L16",
+      "description": "Corrugated tube OD50 x 300 mm",
+      "unit_price_inr": 8.75,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L17",
+      "description": "Corrugated tube OD75 x 300 mm",
+      "unit_price_inr": 13.4,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L18",
+      "description": "6-cell partition insert 3-ply",
+      "unit_price_inr": 94.0,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L19",
+      "description": "12-cell partition insert 3-ply",
+      "unit_price_inr": 138.0,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L20",
+      "description": "24-cell partition insert 5-ply",
+      "unit_price_inr": 208.0,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L21",
+      "description": "Telescopic outer 400x300x200 3-ply",
+      "unit_price_inr": 64.5,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L22",
+      "description": "Telescopic inner 400x300x200 3-ply",
+      "unit_price_inr": 59.0,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L23",
+      "description": "Archive box 400x300x250 3-ply",
+      "unit_price_inr": 52.0,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L24",
+      "description": "Archive box 400x300x250 5-ply",
+      "unit_price_inr": 71.5,
+      "uom": "ea",
+      "notes": ""
+    },
+    {
+      "line_id": "L25",
+      "description": "Kraft paper tape 48mm x 100m",
+      "unit_price_inr": 37.5,
+      "uom": "roll",
+      "notes": ""
+    },
+    {
+      "line_id": "L26",
+      "description": "Bubble wrap 1.2m x 50m",
+      "unit_price_inr": 418.0,
+      "uom": "roll",
+      "notes": ""
+    },
+    {
+      "line_id": "L27",
+      "description": "PE foam sheet 5mm 1200x800",
+      "unit_price_inr": 34.5,
+      "uom": "sheet",
+      "notes": ""
+    },
+    {
+      "line_id": "L28",
+      "description": "PP strapping band 12mm",
+      "unit_price_inr": 184.0,
+      "uom": "kg",
+      "notes": ""
+    },
+    {
+      "line_id": "L29",
+      "description": "Shrink film 500mm x 300m",
+      "unit_price_inr": 865.0,
+      "uom": "roll",
+      "notes": ""
+    },
+    {
+      "line_id": "L30",
+      "description": "Wooden pallet 1200x800 EUR",
+      "unit_price_inr": 635.0,
+      "uom": "ea",
+      "notes": ""
+    }
+  ]
+}

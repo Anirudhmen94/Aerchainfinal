@@ -1,0 +1,9 @@
+<ul class="mt-4 space-y-2 text-sm max-h-48 overflow-auto">
+  {% for m in pipe.dispatch_log %}
+  <li class="border border-slate-100 rounded-lg p-2">
+    <div class="font-medium">{{ m.vendor_name }} <span class="chip">{{ m.vendor_id }}</span></div>
+    <div class="text-xs text-slate-500">{{ m.to }} · {{ m.delivery }}</div>
+    <div class="text-xs truncate">{{ m.subject }}</div>
+  </li>
+  {% endfor %}
+</ul>
