@@ -863,7 +863,7 @@
 <section class="card space-y-4">
   <div class="tip-banner no-print" data-tip-key="award" role="note">
     <span class="tip-icon" aria-hidden="true">i</span>
-    <div class="tip-body"><strong>Award.</strong> Lines auto-fill with the cheapest Pass split — override any dropdown (manager gets a stub notification; no Approve/Reject on this tab). Then <em>Send award notices</em> only to confirmed vendors. Manager + vendor stubs land on <strong>Outbox</strong>. Next: <strong>Audit</strong>.</div>
+    <div class="tip-body"><strong>Award.</strong> Recommend → adjust dropdowns → use <em>Exceptions</em> if a Fail vendor still has a price → <em>Explain this award</em> → <em>Send award notices</em>. Manager + vendor stubs land on <strong>Outbox</strong>. Next: <strong>Audit</strong>.</div>
     <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
   </div>
   <div class="flex flex-wrap items-start justify-between gap-3">
@@ -872,9 +872,6 @@
       <p class="section-muted">Pick a qualified, priced vendor per line.</p>
     </div>
     <div class="flex flex-wrap gap-2 no-print">
-      <form method="post" action="/crew/{{ rfx.rfx_id }}/award/suggest">
-        <button class="btn-sec" type="submit" title="Auto-assign cheapest award-eligible vendor per line">Suggest cheapest split</button>
-      </form>
       <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/export.xlsx" title="Download award workbook">Export Excel</a>
       <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/export.csv" title="Download award CSV">Export CSV</a>
     </div>
@@ -927,6 +924,57 @@
   </div>
   {% endif %}
 
+  {# ── A. Recommended split banner ── #}
+  {% if pipe.comparison and shortlist_pass and recommended_split %}
+  <div class="rounded-xl border-2 border-indigo-300 bg-gradient-to-br from-indigo-50 to-white p-4 shadow-sm no-print" id="recommended-split-banner">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="min-w-0 flex-1">
+        <div class="text-xs font-semibold uppercase tracking-wide text-indigo-700 mb-1">Recommended split</div>
+        <p class="text-sm text-slate-800 mb-2">{{ recommended_split.sentence }}</p>
+        <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span class="text-2xl font-semibold tabular-nums text-indigo-950">₹{{ '%.2f'|format(recommended_split.total_inr or 0) }}</span>
+          <span class="text-sm text-slate-600">{{ recommended_split.lines_awarded or 0 }} / {{ recommended_split.lines_total or 0 }} lines awarded</span>
+        </div>
+        {% if recommended_split.by_vendor %}
+        <ul class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-700">
+          {% for b in recommended_split.by_vendor %}
+          <li class="rounded-full bg-white/80 border border-indigo-100 px-2 py-0.5">
+            {{ b.name }} · {{ b.lines }} line{{ 's' if b.lines != 1 else '' }} · ₹{{ '%.0f'|format(b.extended_inr or 0) }}
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+      <div class="flex flex-col gap-2 shrink-0">
+        <form method="post" action="/crew/{{ rfx.rfx_id }}/award/suggest">
+          <button class="btn" type="submit" title="Auto-assign cheapest award-eligible vendor per line">Suggest cheapest split</button>
+        </form>
+        <form method="post" action="/crew/{{ rfx.rfx_id }}/award/explain">
+          <button class="btn-sec" type="submit" title="Analyst brief: why this split">Explain this award</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% elif pipe.comparison and shortlist_pass %}
+  <div class="rounded-xl border border-indigo-200 bg-indigo-50/60 p-4 no-print flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <div class="text-xs font-semibold uppercase tracking-wide text-indigo-700 mb-1">Recommended split</div>
+      <p class="text-sm text-slate-700">Cheapest per line among Pass vendors — run Suggest to populate awards.</p>
+    </div>
+    <form method="post" action="/crew/{{ rfx.rfx_id }}/award/suggest">
+      <button class="btn" type="submit">Suggest cheapest split</button>
+    </form>
+  </div>
+  {% endif %}
+
+  {# E. Explain result card #}
+  {% if award_explanation %}
+  <div class="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800 no-print" id="award-explanation-card">
+    <div class="font-medium text-slate-900 mb-1.5">Award brief</div>
+    <div class="leading-relaxed whitespace-pre-wrap">{{ award_explanation }}</div>
+  </div>
+  {% endif %}
+
   {% if shortlist_pass or shortlist_fail %}
   <div class="mb-2 space-y-2 no-print">
     <div class="text-xs font-medium text-slate-600 uppercase tracking-wide">Shortlist (questionnaire Pass)</div>
@@ -965,10 +1013,11 @@
   </div>
   {% else %}
 
+  {# ── B. Slim line table ── #}
   <div class="space-y-3">
     <form id="award-save-form" method="post" action="/crew/{{ rfx.rfx_id }}/award/save" class="hidden" aria-hidden="true"></form>
     <div data-filter-root class="space-y-2">
-      <div class="filter-bar no-print">
+      <div class="filter-bar filter-bar-quiet no-print">
         <input type="search" data-filter-search placeholder="Search lines…" title="Filter by line id or description" aria-label="Search award lines" />
         <select data-filter-assign title="Show assigned or unassigned lines" aria-label="Assignment">
           <option value="all">All assignment</option>
@@ -981,7 +1030,6 @@
           <option value="{{ v.vendor_id|lower }}">{{ v.vendor_id }} — {{ v.name }}</option>
           {% endfor %}
         </select>
-        <span class="tip-q" tabindex="0" role="img" aria-label="Tip: vendor filter shows lines awarded to that vendor" data-tip="Vendor filter keeps rows currently awarded to that vendor (unassigned rows hide when a vendor is selected).">?</span>
         <span class="filter-count" data-filter-count></span>
       </div>
 
@@ -992,7 +1040,6 @@
           {% for li in rfx.line_items %}
             {% set elig = eligible_by_line.get(li.line_id, []) %}
             {% set current = pipe.awards.get(li.line_id, '') %}
-            {% set partials = partial_by_line.get(li.line_id, []) if partial_by_line else [] %}
             {% set pst = partial_status_by_line.get(li.line_id) if partial_status_by_line else none %}
             {% set is_pending = pst and pst.status == 'pending' %}
             {% set is_partial_approved = pst and pst.status == 'approved' and current == pst.vendor_id %}
@@ -1003,13 +1050,13 @@
                 data-status="{{ 'assigned' if current else 'unassigned' }}">
               <td class="text-left max-w-[16rem]">
                 <div class="font-medium">{{ li.line_id }}</div>
-                <div class="text-slate-500 truncate">{{ li.description }}</div>
+                <div class="text-slate-500 truncate text-xs">{{ li.description }}</div>
                 {% if is_pending %}
-                <span class="chip chip-warn mt-1" title="Provisional — notification sent to manager; not firm until approved">Awaiting manager approval — notification sent</span>
+                <span class="chip chip-warn mt-1" title="Provisional — notification sent to manager">Awaiting manager</span>
                 {% elif is_partial_approved %}
-                <span class="chip chip-ok mt-1" title="Manager approved">Approved{% if pst.kind == 'override' %} (override){% else %} (partial){% endif %}</span>
+                <span class="chip chip-ok mt-1">Approved{% if pst.kind == 'override' %} (override){% else %} (partial){% endif %}</span>
                 {% elif pst and pst.status == 'rejected' %}
-                <span class="chip chip-bad mt-1" title="{{ pst.manager_comment or '' }}">Rejected{% if pst.kind == 'override' %} (override){% else %} (partial){% endif %}</span>
+                <span class="chip chip-bad mt-1">Rejected{% if pst.kind == 'override' %} (override){% else %} (partial){% endif %}</span>
                 {% endif %}
               </td>
               <td class="text-right tabular-nums">{{ li.qty }}</td>
@@ -1033,52 +1080,11 @@
                   </option>
                   {% endif %}
                 </select>
-                {% if is_pending %}
-                <div class="text-[10px] text-amber-800 mt-0.5">
-                  {% if pst.kind == 'override' %}Override{% else %}Requested{% endif %}:
-                  {{ pst.vendor_name or pst.vendor_id }}
-                  {% if pst.unit_price_inr is not none %} · ₹{{ '%.2f'|format(pst.unit_price_inr) }}{% endif %}
-                  — notification sent to manager
-                </div>
-                {% elif not elig and not is_partial_approved %}
+                {% if not elig and not is_partial_approved and not is_pending %}
                 <div class="text-[10px] text-rose-600 mt-0.5">
                   {% set gap_reasons = eligibility_reasons_by_line.get(li.line_id, []) if eligibility_reasons_by_line else [] %}
-                  {% if gap_reasons %}
-                    {{ gap_reasons|join(' · ') }}
-                  {% else %}
-                    No qualified priced vendor
-                  {% endif %}
+                  {% if gap_reasons %}{{ gap_reasons|join(' · ') }}{% else %}No qualified priced vendor{% endif %}
                 </div>
-                {% endif %}
-
-                {% if not is_pending and partials %}
-                <details class="mt-1.5 text-xs border border-amber-200 rounded-md bg-amber-50/60 px-2 py-1.5">
-                  <summary class="cursor-pointer font-medium text-amber-950">
-                    Request partial award
-                    <span class="tip-q" tabindex="0" role="img" aria-label="Tip: for vendors who failed knockouts but have a price" data-tip="Use when a Fail / incomplete vendor has a price you still want — submits a manager notification (stub); stays provisional until approved off this tab.">?</span>
-                  </summary>
-                  <form method="post" action="/crew/{{ rfx.rfx_id }}/award/partial/request" class="mt-2 space-y-1.5">
-                    <input type="hidden" name="line_id" value="{{ li.line_id }}" />
-                    <label class="block text-[10px] text-slate-600">Vendor (not fully eligible)
-                      <select name="vendor_id" class="mt-0.5 w-full rounded border border-slate-300 text-xs px-2 py-1" required
-                              onchange="(function(s){var o=s.options[s.selectedIndex]; var g=document.getElementById('gaps-{{ li.line_id }}'); if(g) g.textContent=o.getAttribute('data-gaps')||'';})(this)">
-                        <option value="">— select —</option>
-                        {% for p in partials %}
-                        <option value="{{ p.vendor_id }}" data-gaps="{{ (p.gaps or [])|join(' · ') }}">
-                          {{ p.name }} — ₹{{ '%.2f'|format(p.unit_price_inr) }}
-                        </option>
-                        {% endfor %}
-                      </select>
-                    </label>
-                    <div id="gaps-{{ li.line_id }}" class="text-[10px] text-amber-900/90 leading-snug"></div>
-                    <label class="block text-[10px] text-slate-600">Buyer justification
-                      <textarea name="buyer_note" rows="2" required minlength="8"
-                                class="mt-0.5 w-full rounded border border-slate-300 text-xs px-2 py-1"
-                                placeholder="Why award despite gaps? (required)"></textarea>
-                    </label>
-                    <button class="btn-sec text-xs py-1" type="submit" title="Notify manager (stub) — stays provisional">Submit — notify manager</button>
-                  </form>
-                </details>
                 {% endif %}
               </td>
               <td class="text-right tabular-nums text-slate-500">
@@ -1103,8 +1109,7 @@
   <div class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 no-print" role="status">
     <div class="font-medium">Notification sent to your manager for approval</div>
     <p class="text-xs mt-1 text-amber-900/80">
-      Stub email written to Outbox (Type → Manager). This line stays provisional until approved behind the scenes —
-      Approve/Reject is not shown on Award — the line stays provisional until approved behind the scenes.
+      Stub email written to Outbox (Type → Manager). Line stays provisional until approved behind the scenes — no Approve/Reject on this tab.
     </p>
     <a class="underline text-xs" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=manager">Open Outbox (Manager) →</a>
   </div>
@@ -1115,62 +1120,75 @@
   </div>
   {% endif %}
 
-  {% if award_summary %}
-  <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
-    <div class="font-medium text-indigo-900 mb-2">Award summary</div>
-    <div class="text-2xl font-semibold tabular-nums mb-2">
-      ₹{{ '%.2f'|format(award_summary.total_inr or 0) }}
+  {# ── C. Exceptions block ── #}
+  {% set exc_rows = exception_lines or [] %}
+  {% if exc_rows %}
+  <div class="rounded-lg border border-amber-200 bg-amber-50/40 p-4 space-y-3 no-print" id="award-exceptions">
+    <div>
+      <div class="font-medium text-amber-950">Exceptions</div>
+      <p class="text-xs text-amber-900/80 mt-0.5">Lines with priced non-Pass candidates, or pending partial/override requests. Submit notifies manager (stub).</p>
     </div>
-    <ul class="text-sm space-y-1">
-      {% for vid, bucket in (award_summary.by_vendor or {}).items() %}
-      <li>{{ bucket.name if bucket is mapping else vid }}:
-        {% if bucket is mapping %}
-          {{ bucket.lines or '' }} lines · ₹{{ '%.2f'|format(bucket.extended_inr or bucket.extended_partial_inr or 0) }}
+    <ul class="space-y-3">
+      {% for row in exc_rows %}
+      {% set pst = row.status %}
+      {% set is_pending = row.pending %}
+      <li class="rounded-md border border-amber-200 bg-white p-3 text-sm">
+        <div class="flex flex-wrap items-baseline gap-2 mb-1">
+          <span class="font-medium">{{ row.line_id }}</span>
+          <span class="text-xs text-slate-500 truncate max-w-[20rem]">{{ row.description }}</span>
+          {% if is_pending %}
+          <span class="chip chip-warn">Awaiting manager</span>
+          {% elif pst and pst.status == 'approved' %}
+          <span class="chip chip-ok">Approved</span>
+          {% elif pst and pst.status == 'rejected' %}
+          <span class="chip chip-bad">Rejected</span>
+          {% endif %}
+        </div>
+        {% if is_pending and pst %}
+        <p class="text-xs text-amber-900 mb-1">
+          Requested: {{ pst.vendor_name or pst.vendor_id }}{% if pst.unit_price_inr is not none %} · ₹{{ '%.2f'|format(pst.unit_price_inr) }}{% endif %}
+          — notification sent
+        </p>
+        {% elif row.partials %}
+        <form method="post" action="/crew/{{ rfx.rfx_id }}/award/partial/request" class="grid gap-2 sm:grid-cols-[1fr_1fr_auto] items-end">
+          <input type="hidden" name="line_id" value="{{ row.line_id }}" />
+          <label class="block text-[10px] text-slate-600">Vendor (not fully eligible)
+            <select name="vendor_id" class="mt-0.5 w-full rounded border border-slate-300 text-xs px-2 py-1" required>
+              <option value="">— select —</option>
+              {% for p in row.partials %}
+              <option value="{{ p.vendor_id }}">{{ p.name }} — ₹{{ '%.2f'|format(p.unit_price_inr) }}{% if p.gaps %} · {{ (p.gaps or [])|join('; ') }}{% endif %}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="block text-[10px] text-slate-600">Buyer justification
+            <input type="text" name="buyer_note" required minlength="8"
+                   class="mt-0.5 w-full rounded border border-slate-300 text-xs px-2 py-1"
+                   placeholder="Why award despite gaps?" />
+          </label>
+          <button class="btn-sec text-xs py-1.5" type="submit">Request partial</button>
+        </form>
         {% else %}
-          ₹{{ '%.2f'|format(bucket) }}
+        <p class="text-xs text-slate-500">No open exception action.</p>
         {% endif %}
       </li>
       {% endfor %}
     </ul>
-    {% if award_summary.rejected %}
-    <div class="mt-2 text-xs text-rose-700">{{ award_summary.rejected|length }} rejected assignment(s).</div>
-    {% endif %}
   </div>
-  {% endif %}
+  {% else %}
+  <div class="text-xs text-slate-500 no-print" id="award-exceptions-empty">No exceptions</div>
   {% endif %}
 
+  {% endif %}{# comparison #}
+
+  {# ── D. Compact send receipts ── #}
   {% if award_notices_just_sent and (award_log or manager_award_notice) %}
   <div id="award-sent-dialog" class="sad-dialog-backdrop no-print" role="dialog" aria-modal="true" aria-labelledby="award-sent-title" style="background:rgba(15,23,42,.45)">
-    <div class="sad-dialog" style="max-width:40rem;max-height:85vh;overflow:auto">
+    <div class="sad-dialog" style="max-width:28rem">
       <h3 id="award-sent-title" style="color:#065f46">Award notices sent</h3>
-      <p>Success — stub email written to <strong>manager</strong>{% if manager_award_notice %} ({{ manager_award_notice.to or 'manager@aerchain.example' }}){% endif %}
-        and <strong>{{ award_log|length }}</strong> fully confirmed vendor{{ 's' if award_log|length != 1 else '' }}.
-        Pending partial/override vendors were not emailed.</p>
-      {% if manager_award_notice %}
-      <div class="rounded border border-amber-200 bg-amber-50 p-3 text-left text-sm text-amber-950 mb-3">
-        <div class="font-medium mb-1">Manager</div>
-        <div class="text-xs space-y-0.5">
-          <div><span class="text-slate-500">To:</span> {{ manager_award_notice.to or 'manager@aerchain.example' }}</div>
-          <div><span class="text-slate-500">Subject:</span> {{ manager_award_notice.subject or '—' }}</div>
-          <div class="text-slate-600"><span class="text-slate-500">Preview:</span> {{ manager_award_notice.body_preview or (manager_award_notice.body[:180] + '…' if manager_award_notice.body and manager_award_notice.body|length > 180 else manager_award_notice.body or '—') }}</div>
-          <div><span class="chip chip-ok">{{ manager_award_notice.status or 'stub_sent' }}</span></div>
-        </div>
-      </div>
-      {% endif %}
-      {% if award_log %}
-      <div class="font-medium text-sm mb-1">Fully qualified vendors ({{ award_log|length }})</div>
-      <ul>
-        {% for em in award_log %}
-        <li>
-          <strong>{{ em.vendor_name or em.vendor_id }}</strong>
-          — {{ em.to or '—' }} · {{ em.subject or 'Award notice' }}
-        </li>
-        {% endfor %}
-      </ul>
-      {% endif %}
+      <p>Manager stub{% if manager_award_notice %} → {{ manager_award_notice.to or 'manager@aerchain.example' }}{% endif %}
+        · <strong>{{ award_log|length }}</strong> vendor notice{{ 's' if award_log|length != 1 else '' }}.</p>
       <div class="actions">
-        <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=award">Outbox (Award notice)</a>
-        <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=manager">Outbox (Manager)</a>
+        <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=award">Outbox</a>
         <button type="button" class="btn" onclick="document.getElementById('award-sent-dialog').style.display='none'">Got it</button>
       </div>
     </div>
@@ -1180,68 +1198,54 @@
   {% if pipe.awards or award_log or manager_award_notice %}
   <div class="rounded-lg border border-slate-200 bg-white p-4 space-y-3 no-print">
     <div class="font-medium text-sm">Notify awarded vendors (stub SMTP)</div>
-    <p class="text-xs text-slate-500">Sends stub award emails only to <strong>fully confirmed</strong> (Pass / firm) vendors — not pending partial or override lines. Manager gets a summary stub too. Files under <code>data/outbox/</code>.</p>
+    <p class="text-xs text-slate-500">Stub emails only to <strong>fully confirmed</strong> (Pass / firm) vendors. Manager gets a summary stub. Files under <code>data/outbox/</code>.</p>
     <form method="post" action="/crew/{{ rfx.rfx_id }}/award/notify" class="flex flex-wrap items-center gap-2">
       <button class="btn" type="submit" title="Stub-write firm award notices">Send award notices (stub)</button>
-      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=award">Open Outbox (award) →</a>
+      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=award">Open Outbox →</a>
     </form>
     {% if award_log or manager_award_notice %}
-    <div class="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-950 space-y-4" id="emails-sent-panel">
-      <div class="font-medium">Emails sent after award notices · status <code>stub_sent</code></div>
-      <p class="text-xs text-emerald-900/80">Manager summary + fully confirmed (Pass / firm) vendor notices. Open Outbox for filters.</p>
-
-      {% if manager_award_notice %}
-      <div class="rounded border border-amber-300 bg-white p-3 text-slate-800 space-y-2" id="email-sent-manager">
-        <div class="flex flex-wrap gap-2 items-baseline text-xs">
-          <span class="chip chip-warn">Manager</span>
-          <span class="font-medium">Email sent to manager</span>
-          <span class="chip chip-ok">{{ manager_award_notice.status or 'stub_sent' }}</span>
-        </div>
-        <div class="text-xs space-y-0.5">
-          <div><span class="text-slate-500">To:</span> {{ manager_award_notice.to or 'manager@aerchain.example' }}</div>
-          <div><span class="text-slate-500">Subject:</span> {{ manager_award_notice.subject or '—' }}</div>
-          <div class="text-slate-600 mt-1"><span class="text-slate-500">Preview:</span> {{ manager_award_notice.body_preview or (manager_award_notice.body[:180] + '…' if manager_award_notice.body and manager_award_notice.body|length > 180 else manager_award_notice.body or '—') }}</div>
-          {% if manager_award_notice.path %}
-          <div class="text-slate-400 truncate mt-1" title="{{ manager_award_notice.path }}"><span class="text-slate-500">File:</span> <code class="text-[10px]">{{ manager_award_notice.path }}</code></div>
+    <div class="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-950 space-y-2" id="emails-sent-panel">
+      <div class="font-medium text-sm">Receipts</div>
+      <ul class="text-xs space-y-1">
+        {% if manager_award_notice %}
+        <li>
+          Manager: <span class="chip chip-ok">{{ manager_award_notice.status or 'stub_sent' }}</span>
+          to {{ manager_award_notice.to or 'manager@aerchain.example' }}
+          · <a class="underline" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=manager">Outbox</a>
+        </li>
+        {% endif %}
+        {% if award_log %}
+        <li>
+          Vendors: <strong>{{ award_log|length }}</strong> notice{{ 's' if award_log|length != 1 else '' }}
+          · <a class="underline" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=award">Outbox</a>
+        </li>
+        {% endif %}
+      </ul>
+      <details class="mt-1">
+        <summary class="cursor-pointer text-xs font-medium text-emerald-900">Show emails</summary>
+        <div class="mt-2 space-y-3">
+          {% if manager_award_notice %}
+          <div class="rounded border border-amber-200 bg-white p-3 text-slate-800 text-xs space-y-0.5">
+            <div class="font-medium mb-1"><span class="chip chip-warn">Manager</span></div>
+            <div><span class="text-slate-500">To:</span> {{ manager_award_notice.to or 'manager@aerchain.example' }}</div>
+            <div><span class="text-slate-500">Subject:</span> {{ manager_award_notice.subject or '—' }}</div>
+            <div class="text-slate-600"><span class="text-slate-500">Preview:</span> {{ manager_award_notice.body_preview or (manager_award_notice.body[:180] + '…' if manager_award_notice.body and manager_award_notice.body|length > 180 else manager_award_notice.body or '—') }}</div>
+          </div>
           {% endif %}
-        </div>
-        <a class="btn-sec text-xs inline-flex" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=manager">View on Outbox (Manager filter) →</a>
-      </div>
-      {% endif %}
-
-      {% if award_log %}
-      <div class="space-y-2" id="emails-sent-vendors">
-        <div class="font-medium text-sm">Emails sent to fully qualified vendors ({{ award_log|length }})</div>
-        <ul class="space-y-3">
-          {% for em in award_log %}
-          <li class="rounded border border-emerald-200 bg-white p-3 text-slate-800">
-            <div class="flex flex-wrap gap-2 items-baseline text-xs mb-1">
-              <span class="chip chip-ok">{{ em.status or 'stub_sent' }}</span>
-              <span class="font-medium">{{ em.vendor_name or em.vendor_id }}</span>
-            </div>
-            <div class="text-xs space-y-0.5">
-              <div><span class="text-slate-500">To:</span> {{ em.to or '—' }}</div>
-              <div><span class="text-slate-500">Subject:</span> {{ em.subject or '—' }}</div>
-              <div class="text-slate-600 mt-1"><span class="text-slate-500">Preview:</span> {{ em.body_preview or (em.body[:180] + '…' if em.body and em.body|length > 180 else em.body or '—') }}</div>
-              {% if em.path %}
-              <div class="text-slate-400 truncate mt-1" title="{{ em.path }}"><span class="text-slate-500">File:</span> <code class="text-[10px]">{{ em.path }}</code></div>
-              {% endif %}
-            </div>
-          </li>
+          {% for em in award_log or [] %}
+          <div class="rounded border border-emerald-200 bg-white p-3 text-slate-800 text-xs space-y-0.5">
+            <div class="font-medium mb-1">{{ em.vendor_name or em.vendor_id }} <span class="chip chip-ok">{{ em.status or 'stub_sent' }}</span></div>
+            <div><span class="text-slate-500">To:</span> {{ em.to or '—' }}</div>
+            <div><span class="text-slate-500">Subject:</span> {{ em.subject or '—' }}</div>
+            <div class="text-slate-600"><span class="text-slate-500">Preview:</span> {{ em.body_preview or (em.body[:180] + '…' if em.body and em.body|length > 180 else em.body or '—') }}</div>
+          </div>
           {% endfor %}
-        </ul>
-        <a class="btn-sec text-xs inline-flex" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=award">View on Outbox (Award notice filter) →</a>
-      </div>
-      {% endif %}
+        </div>
+      </details>
     </div>
     {% elif award_notice_paths %}
     <div class="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
       <div class="font-medium mb-1">Notices written ({{ award_notice_paths|length }})</div>
-      <ul class="text-xs space-y-0.5">
-        {% for p in award_notice_paths %}
-        <li><code>{{ p }}</code></li>
-        {% endfor %}
-      </ul>
       <a class="underline text-xs" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=award">View on Outbox tab</a>
     </div>
     {% endif %}
