@@ -3,6 +3,8 @@
   <p class="text-sm font-medium mb-2">{{ turn.question }}</p>
   <div class="text-xs uppercase tracking-wide text-indigo-600 mb-1">Analyst</div>
   <div class="text-sm whitespace-pre-wrap text-slate-800">{{ turn.answer }}</div>
+  {% set artifacts = turn.artifacts or (turn.raw.artifacts if turn.raw is mapping else none) or [] %}
+  {% include "crew/partials/ask_artifacts.html" %}
   {% if turn.caveats %}
   <ul class="mt-2 text-xs text-amber-700 list-disc list-inside">
     {% for c in turn.caveats %}<li>{{ c }}</li>{% endfor %}

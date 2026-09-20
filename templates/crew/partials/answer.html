@@ -2,6 +2,8 @@
   <div class="text-xs text-slate-500 mb-1">Q</div>
   <div class="font-medium text-sm mb-2">{{ question }}</div>
   <div class="text-sm text-slate-800 whitespace-pre-wrap">{{ result.answer }}</div>
+  {% set artifacts = result.artifacts or [] %}
+  {% include "crew/partials/ask_artifacts.html" %}
   {% if result.tool %}<div class="mt-1"><span class="chip">tool: {{ result.tool }}</span></div>{% endif %}
   {% if result.caveats %}
   <ul class="mt-2 text-xs text-amber-800 list-disc list-inside">

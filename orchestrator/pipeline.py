@@ -881,6 +881,7 @@ class RFxPipeline:
                     "then ask again — I'll ground the answer on live prices and knockouts."
                 ),
                 "data": None,
+                "artifacts": [],
                 "caveats": ["comparison_missing"],
                 "tool": "guard",
                 "model": None,
@@ -918,6 +919,7 @@ class RFxPipeline:
             "data": result.get("data")
             if result.get("data") is not None
             else result.get("tables"),
+            "artifacts": result.get("artifacts") or [],
             "caveats": result.get("caveats") or [],
             "tool": result.get("tool"),
             "model": result.get("model"),

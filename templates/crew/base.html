@@ -478,15 +478,57 @@
       });
     });
 
+    window.aerchainDrawAskCharts = function (root) {
+      if (!root || typeof Chart === 'undefined') return;
+      var nodes = root.querySelectorAll ? root.querySelectorAll('canvas[data-ask-chart]') : [];
+      if (!nodes.length && root.getAttribute && root.getAttribute('data-ask-chart') != null) {
+        nodes = [root];
+      }
+      var palette = ['#0f172a','#0284c7','#059669','#d97706','#dc2626','#7c3aed','#64748b'];
+      nodes.forEach(function (cv) {
+        try {
+          var existing = (typeof Chart.getChart === 'function') ? Chart.getChart(cv) : null;
+          if (existing) existing.destroy();
+          var raw = cv.getAttribute('data-ask-chart') || '{}';
+          var spec = JSON.parse(raw);
+          var datasets = (spec.datasets || []).map(function (d, i) {
+            var out = Object.assign({}, d);
+            if (!out.backgroundColor) out.backgroundColor = palette[i % palette.length];
+            return out;
+          });
+          var stacked = !!spec.stacked;
+          new Chart(cv, {
+            type: spec.type || 'bar',
+            data: { labels: spec.labels || [], datasets: datasets },
+            options: {
+              indexAxis: spec.indexAxis || 'x',
+              responsive: true,
+              maintainAspectRatio: true,
+              plugins: {
+                title: { display: !!spec.title, text: spec.title || '' },
+                legend: { display: datasets.length > 1 }
+              },
+              scales: {
+                x: { stacked: stacked, beginAtZero: true },
+                y: { stacked: stacked, beginAtZero: true }
+              }
+            }
+          });
+        } catch (err) { console.warn('ask chart', err); }
+      });
+    };
+
     document.addEventListener('DOMContentLoaded', function () {
       bindTipDismiss();
       initFilters();
       cacheSessionSnapshot();
+      try { window.aerchainDrawAskCharts(document); } catch (e) {}
     });
-    document.body.addEventListener('htmx:afterSettle', function () {
+    document.body.addEventListener('htmx:afterSettle', function (ev) {
       bindTipDismiss();
       initFilters();
       cacheSessionSnapshot();
+      try { window.aerchainDrawAskCharts(ev.target || document); } catch (e) {}
     });
   })();
   </script>

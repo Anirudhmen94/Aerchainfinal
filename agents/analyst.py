@@ -566,7 +566,241 @@ def _question_intents(question: str) -> set[str]:
         intents.add("fx")
     if re.search(r"missing|gap|coverage|clarif", q):
         intents.add("gaps")
+
+    # Visual artifacts for Ask HTMX answers
+    # VP split table: cheapest-per-line / split among Pass / cleared vendors
+    if (
+        re.search(r"\bsplit\b", q)
+        and re.search(r"cheapest|per[- ]line|qualified|cleared|pass", q)
+    ) or (
+        re.search(r"cheapest", q)
+        and re.search(r"qualif|cleared|pass\b|questionnaire", q)
+    ):
+        intents.add("vp_split")
+
+    # Pass vs Fail coverage chart — skip when the ask is clearly a VP split question
+    if "vp_split" not in intents and re.search(
+        r"pass\s*(vs|/|&)?\s*fail|"
+        r"who (cleared|passed|failed)|"
+        r"knockout fail|"
+        r"cleared the (quality )?questionnaire|"
+        r"questionnaire.*(pass|fail|cleared|coverage)|"
+        r"pass.?fail|"
+        r"incomplete.*(knockout|questionnaire|vendor)",
+        q,
+    ):
+        intents.add("ko_pass_fail")
     return intents
+
+
+def build_vp_split_table_artifact(
+    cells: list[dict[str, Any]],
+    *,
+    qualified_vendors: Optional[list[str]] = None,
+    vendor_names: Optional[dict[str, str]] = None,
+    line_meta: Optional[dict[str, dict[str, Any]]] = None,
+) -> dict[str, Any]:
+    """Deterministic VP split table + optional spend-by-vendor bar chart data.
+
+    Columns: Line | Winner (Pass only) | ₹/pc | Runner-up gap
+    Gap = next Pass priced vendor unit price − winner (or None → template shows —).
+    """
+    names = vendor_names or {}
+    meta = line_meta or {}
+    qual = set(qualified_vendors) if qualified_vendors is not None else None
+
+    by_line: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for raw in cells:
+        cell = _cell_as_dict(raw)
+        if not _usable(cell):
+            continue
+        vid = cell.get("vendor_id")
+        if qual is not None and vid not in qual:
+            continue
+        by_line[str(cell.get("line_id"))].append(cell)
+
+    rows: list[dict[str, Any]] = []
+    spend: dict[str, float] = defaultdict(float)
+    for line_id in sorted(by_line.keys()):
+        priced = sorted(by_line[line_id], key=lambda c: float(c["unit_price_inr"]))
+        best = priced[0]
+        winner_id = str(best["vendor_id"])
+        winner_price = float(best["unit_price_inr"])
+        gap: Optional[float] = None
+        runner_up_name: Optional[str] = None
+        if len(priced) >= 2:
+            second = priced[1]
+            gap = round(float(second["unit_price_inr"]) - winner_price, 2)
+            runner_up_name = names.get(str(second["vendor_id"]), str(second["vendor_id"]))
+        qty = meta.get(line_id, {}).get("qty")
+        extended: Optional[float] = None
+        if qty is not None:
+            try:
+                qf = float(qty)
+                extended = round(qf * winner_price, 2)
+                spend[names.get(winner_id, winner_id)] += extended
+            except (TypeError, ValueError):
+                pass
+        rows.append(
+            {
+                "line_id": line_id,
+                "winner": names.get(winner_id, winner_id),
+                "winner_id": winner_id,
+                "unit_price_inr": winner_price,
+                "runner_up_gap": gap,
+                "runner_up": runner_up_name,
+                "qty": float(qty) if qty is not None else None,
+                "extended_inr": extended,
+            }
+        )
+
+    spend_labels = list(spend.keys())
+    spend_values = [round(spend[k], 2) for k in spend_labels]
+    artifact: dict[str, Any] = {
+        "kind": "vp_split_table",
+        "title": "Suggested split — cheapest Pass per line",
+        "rows": rows,
+        "total_spend_inr": round(sum(spend_values), 2) if spend_values else None,
+    }
+    if spend_labels:
+        artifact["spend_chart"] = {
+            "type": "bar",
+            "title": "Spend by awarded vendor (₹)",
+            "labels": spend_labels,
+            "datasets": [{"label": "Extended INR", "data": spend_values}],
+        }
+    return artifact
+
+
+def build_ko_pass_fail_chart_artifact(
+    comparison: ComparisonLike,
+    rfx: RFxLike = None,
+) -> dict[str, Any]:
+    """Pass / Fail / Incomplete × vendor from questionnaire_results / shortlist.
+
+    Stacked horizontal bar: per vendor, knockout answer counts
+    (Pass / Fail / Incomplete). Vendor-level summary also attached.
+    """
+    st = normalize_comparison_state(comparison, rfx=rfx)
+    names = dict(st.get("vendor_names") or {})
+    qualified = set(str(v) for v in (st.get("qualified_vendors") or []))
+
+    q_results_raw = {}
+    if isinstance(comparison, dict):
+        q_results_raw = comparison.get("questionnaire_results") or {}
+    else:
+        q_results_raw = getattr(comparison, "questionnaire_results", None) or {}
+
+    # Prefer shortlist order (Pass first)
+    try:
+        shortlist = shortlist_vendors(comparison, rfx=rfx)
+        vendor_ids = [str(r["vendor_id"]) for r in shortlist]
+    except Exception:
+        vendor_ids = sorted({str(v) for v in q_results_raw.keys()} | set(names.keys()))
+
+    for vid in q_results_raw.keys():
+        if str(vid) not in vendor_ids:
+            vendor_ids.append(str(vid))
+
+    pass_counts: list[int] = []
+    fail_counts: list[int] = []
+    incomplete_counts: list[int] = []
+    labels: list[str] = []
+    vendor_status: list[dict[str, Any]] = []
+
+    def _row_knockout(row: Any) -> bool:
+        return bool(getattr(row, "knockout", None) if not isinstance(row, dict) else row.get("knockout"))
+
+    def _row_passed(row: Any) -> Any:
+        return getattr(row, "passed", None) if not isinstance(row, dict) else row.get("passed")
+
+    for vid in vendor_ids:
+        rows = list(q_results_raw.get(vid) or q_results_raw.get(str(vid)) or [])
+        has_ko = any(_row_knockout(r) for r in rows)
+        scored = [r for r in rows if _row_knockout(r)] if has_ko else rows
+        n_pass = n_fail = n_inc = 0
+        for row in scored:
+            passed = _row_passed(row)
+            if passed is True:
+                n_pass += 1
+            elif passed is False:
+                n_fail += 1
+            else:
+                n_inc += 1
+
+        # Vendor-level bucket for summary chips
+        if vid in qualified or (n_pass and not n_fail and not n_inc):
+            status = "pass"
+        elif n_inc and not n_fail:
+            status = "incomplete"
+        elif n_fail:
+            status = "fail"
+        elif vid not in qualified and not rows:
+            status = "incomplete"
+        else:
+            status = "fail" if vid not in qualified else "pass"
+
+        labels.append(names.get(vid, vid))
+        pass_counts.append(n_pass)
+        fail_counts.append(n_fail)
+        incomplete_counts.append(n_inc)
+        vendor_status.append(
+            {
+                "vendor_id": vid,
+                "vendor_name": names.get(vid, vid),
+                "status": status,
+                "pass": n_pass,
+                "fail": n_fail,
+                "incomplete": n_inc,
+            }
+        )
+
+    summary = {
+        "pass": sum(1 for v in vendor_status if v["status"] == "pass"),
+        "fail": sum(1 for v in vendor_status if v["status"] == "fail"),
+        "incomplete": sum(1 for v in vendor_status if v["status"] == "incomplete"),
+    }
+    return {
+        "kind": "ko_pass_fail_chart",
+        "title": "Questionnaire Pass / Fail / Incomplete by vendor",
+        "summary": summary,
+        "vendors": vendor_status,
+        "chart": {
+            "type": "bar",
+            "indexAxis": "y",
+            "stacked": True,
+            "title": "Knockout answers by vendor",
+            "labels": labels,
+            "datasets": [
+                {"label": "Pass", "data": pass_counts, "backgroundColor": "#16a34a"},
+                {"label": "Fail", "data": fail_counts, "backgroundColor": "#dc2626"},
+                {"label": "Incomplete", "data": incomplete_counts, "backgroundColor": "#d97706"},
+            ],
+        },
+    }
+
+
+def attach_ask_artifacts(
+    question: str,
+    intents: set[str],
+    st: dict[str, Any],
+    comparison: ComparisonLike,
+    rfx: RFxLike = None,
+) -> list[dict[str, Any]]:
+    """Build visual artifacts for Ask answers based on detected intents."""
+    artifacts: list[dict[str, Any]] = []
+    if "vp_split" in intents:
+        artifacts.append(
+            build_vp_split_table_artifact(
+                st.get("cells") or [],
+                qualified_vendors=list(st.get("qualified_vendors") or []),
+                vendor_names=st.get("vendor_names"),
+                line_meta=st.get("line_meta"),
+            )
+        )
+    if "ko_pass_fail" in intents:
+        artifacts.append(build_ko_pass_fail_chart_artifact(comparison, rfx=rfx))
+    return artifacts
 
 
 def _gaps(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -674,8 +908,8 @@ def answer(
             tool = "award_recommendation"
         else:
             text = agent.ask(user_msg)
-    except RuntimeError as exc:
-        # No API key / client — still return deterministic tables so callers/tests work offline
+    except Exception as exc:
+        # No API key / auth / network — still return deterministic tables + artifacts offline
         text = _offline_answer(question, intents, tables, caveats, st)
         tool = "deterministic_offline"
         caveats.append(f"LLM unavailable: {exc}")
@@ -691,11 +925,14 @@ def answer(
             {"role": "assistant", "content": text},
         ]
 
+    artifacts = attach_ask_artifacts(question, intents, st, comparison, rfx=rfx)
+
     return {
         "answer": text,
         "markdown": md,
         "tables": tables,
         "data": cheapest_qual if qual_only or "cheapest" in intents else tables.get("vendor_totals"),
+        "artifacts": artifacts,
         "caveats": caveats,
         "tool": tool,
         "model": _model_name(),

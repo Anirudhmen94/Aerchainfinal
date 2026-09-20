@@ -313,6 +313,13 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
             ),
         },
         {
+            "label": "Pass vs Fail coverage",
+            "q": (
+                "Who cleared the quality questionnaire? Show Pass vs Fail vs Incomplete "
+                "coverage by vendor."
+            ),
+        },
+        {
             "label": "Partial coverage (27 of 30)",
             "q": (
                 "Which vendors quoted fewer than the full line list, which lines are missing, "

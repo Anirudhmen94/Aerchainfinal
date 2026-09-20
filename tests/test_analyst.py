@@ -411,3 +411,58 @@ def test_shortlist_vendors_coverage_and_pass():
     # Qualified vendors should sort before failed ones
     assert rows[0]["pass"] is True
     assert rows[-1]["vendor_id"] == "v3" or rows[-1]["pass"] is False
+
+
+def test_vp_split_and_ko_pass_fail_artifacts():
+    from agents.analyst import _question_intents, answer, build_vp_split_table_artifact
+
+    vp_q = (
+        "What if we split the award, cheapest per line, but only among vendors "
+        "who cleared the quality questionnaire?"
+    )
+    ko_q = (
+        "Who cleared the quality questionnaire? Show Pass vs Fail vs Incomplete "
+        "coverage by vendor."
+    )
+    assert "vp_split" in _question_intents(vp_q)
+    assert "ko_pass_fail" not in _question_intents(vp_q)
+    assert "ko_pass_fail" in _question_intents(ko_q)
+
+    cells = [c.model_dump() for c in _sample_cells()]
+    art = build_vp_split_table_artifact(
+        cells,
+        qualified_vendors=["v1", "v2"],
+        vendor_names={"v1": "Alpha", "v2": "Beta", "v3": "Gamma"},
+        line_meta={"L1": {"qty": 100}, "L2": {"qty": 50}},
+    )
+    assert art["kind"] == "vp_split_table"
+    assert art["rows"][0]["winner"] == "Beta"
+    assert art["rows"][0]["runner_up_gap"] == 2.0
+    assert art.get("spend_chart")
+
+    rfx = _sample_rfx()
+    # Enrich comparison with questionnaire_results for chart
+    base = _sample_comparison_dict()
+    from shared_models import QuestionnaireResult
+
+    base["questionnaire_results"] = {
+        "v1": [
+            QuestionnaireResult(
+                question_id="q1", question="ISO?", knockout=True, answer="Yes", passed=True
+            )
+        ],
+        "v2": [
+            QuestionnaireResult(
+                question_id="q1", question="ISO?", knockout=True, answer="Yes", passed=True
+            )
+        ],
+        "v3": [
+            QuestionnaireResult(
+                question_id="q1", question="ISO?", knockout=True, answer="", passed=None
+            )
+        ],
+    }
+    out = answer(vp_q, rfx=rfx, comparison=base)
+    assert any(a.get("kind") == "vp_split_table" for a in out.get("artifacts") or [])
+    out2 = answer(ko_q, rfx=rfx, comparison=base)
+    assert any(a.get("kind") == "ko_pass_fail_chart" for a in out2.get("artifacts") or [])
