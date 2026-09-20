@@ -171,6 +171,36 @@ class RFxPipeline:
         self.normalize()
         return self.snapshot()
 
+    def run_e2e(
+        self,
+        brief: str,
+        vendor_dir: Optional[Union[str, Path]] = None,
+        questions: Optional[list[str]] = None,
+        **draft_kwargs: Any,
+    ) -> dict[str, Any]:
+        """Full demo in one shot: draft → dispatch → parse → normalize → ask."""
+        self.run(brief, vendor_dir=vendor_dir, skip_dispatch=False, **draft_kwargs)
+        qs = questions or [
+            "What if we split the award, cheapest per line, but only among vendors who cleared the quality questionnaire?",
+            "Give a defensible award recommendation with totals and the main risks.",
+        ]
+        for q in qs:
+            try:
+                self.ask(q)
+            except Exception as exc:
+                self.chat.append({
+                    "question": q,
+                    "answer": f"Analyst error: {exc}",
+                    "data": None,
+                    "caveats": [str(exc)],
+                    "tool": None,
+                    "model": None,
+                    "raw": {"error": str(exc)},
+                })
+                self.step = "asked"
+                self._persist()
+        return self.snapshot()
+
     def snapshot(self) -> dict[str, Any]:
         return {
             "step": self.step,
