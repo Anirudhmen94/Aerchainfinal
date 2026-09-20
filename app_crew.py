@@ -439,6 +439,11 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "shortlist_fail": shortlist_fail,
         "award_notice_paths": list(getattr(pipe, "award_notice_paths", None) or []),
         "award_log": list(getattr(pipe, "award_log", None) or []),
+        "manager_award_notice": (
+            dict(getattr(pipe, "manager_award_notice", None))
+            if isinstance(getattr(pipe, "manager_award_notice", None), dict)
+            else None
+        ),
         "outbox_filter": "",
         "notices_just_sent": 0,
         "q_matrix": q_matrix,
@@ -446,7 +451,7 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "award_gaps": award_gaps,
         "eligibility_reasons_by_line": eligibility_reasons_by_line,
         "freeze": getattr(pipe, "freeze", None),
-        "is_frozen": bool(getattr(pipe, "freeze", None)),
+        "is_frozen": False,  # freeze UI removed
         "review_log": list(getattr(pipe, "review_log", None) or []),
         "partial_by_line": partial_by_line,
         "partial_status_by_line": partial_status_by_line,

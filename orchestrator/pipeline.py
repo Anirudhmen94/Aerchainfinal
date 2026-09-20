@@ -429,6 +429,7 @@ class RFxPipeline:
         self.award_validation: dict[str, Any] = {}
         self.award_notice_paths: list[str] = []
         self.award_log: list[dict[str, Any]] = []
+        self.manager_award_notice: Optional[dict[str, Any]] = None
         self.freeze: Optional[dict[str, Any]] = None
         self.review_log: list[dict[str, Any]] = []
         self.partial_requests: list[dict[str, Any]] = []
@@ -1399,7 +1400,8 @@ class RFxPipeline:
 
     @property
     def is_frozen(self) -> bool:
-        return bool(self.freeze)
+        # Freeze UI removed — never lock awards (legacy freeze snapshots ignored)
+        return False
 
     def freeze_award(self, note: str = "") -> dict[str, Any]:
         """Snapshot awards + shortlist Pass vendors; lock dropdowns until unfreeze."""
@@ -2289,10 +2291,10 @@ class RFxPipeline:
         vendor_names = [n for n in vendor_names if n]
         try:
             mgr = self._notify_manager_awards_sent(vendor_names)
-            # _notify appends to dispatch_log; already on self.dispatch_log
-            _ = mgr
+            # Persist so Award UI can re-render manager card after reload
+            self.manager_award_notice = dict(mgr) if mgr else None
         except Exception:
-            pass
+            self.manager_award_notice = None
         names = ", ".join(Path(p).name for p in self.award_notice_paths) or "(none)"
         self.append_review_log(
             "award_notices_sent",
@@ -2321,6 +2323,7 @@ class RFxPipeline:
             "award_validation": self.award_validation,
             "award_notice_paths": list(self.award_notice_paths or []),
             "award_log": list(self.award_log or []),
+            "manager_award_notice": dict(self.manager_award_notice) if self.manager_award_notice else None,
             "freeze": self.freeze,
             "review_log": list(self.review_log or []),
             "partial_requests": list(self.partial_requests or []),
@@ -2356,6 +2359,8 @@ class RFxPipeline:
         self.award_validation = dict(data.get("award_validation") or {})
         self.award_notice_paths = list(data.get("award_notice_paths") or [])
         self.award_log = list(data.get("award_log") or [])
+        man = data.get("manager_award_notice")
+        self.manager_award_notice = dict(man) if isinstance(man, dict) else None
         self.freeze = data.get("freeze") or None
         self.review_log = list(data.get("review_log") or [])
         self.partial_requests = list(data.get("partial_requests") or [])
