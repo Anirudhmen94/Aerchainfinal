@@ -29,7 +29,6 @@ templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
 app = FastAPI(title="Aerchain RFx Crew", version="0.2.0")
 
-# Simple process-local session (fine for demo; Vercel is per-invocation — use store files).
 _SESSIONS: dict[str, RFxPipeline] = {}
 
 
@@ -51,7 +50,8 @@ def _save(pipe: RFxPipeline) -> None:
 
 
 def _render(request: Request, name: str, **ctx: Any) -> HTMLResponse:
-    return templates.TemplateResponse(name, {"request": request, **ctx})
+    # Starlette >=0.37: TemplateResponse(request, name, context)
+    return templates.TemplateResponse(request, name, ctx)
 
 
 @app.get("/healthz")
@@ -82,7 +82,7 @@ def home(request: Request):
                         "id": rfx.get("rfx_id", path.stem),
                         "title": rfx.get("title", "Untitled"),
                         "step": data.get("step", ""),
-                        "vendors": len((rfx.get("vendors") or [])),
+                        "vendors": len(rfx.get("vendors") or []),
                     }
                 )
             except Exception:
