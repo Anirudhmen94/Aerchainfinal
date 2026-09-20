@@ -46,6 +46,14 @@ Procurement buyers still spend days copying vendor quotes into Excel. They send 
 
 ---
 
-## Where we think the hard problem actually is
+## Where the more interesting problem actually is
 
-Reading documents is getting easier. The hard product problem is **matching messy vendor lines to the right RFx rows** when data is partial (“same as last year”, only 27 of 30 lines quoted, incomplete quality answers). The honest product answer is clear flags, buyer override, and an audit trail — not a silent best guess. Next worth building: a short “confirm these mappings” link back to the vendor so nobody retypes Excel again.
+The more interesting problem is not the spreadsheet itself. The spreadsheet is where procurement teams manually consolidate a deeper problem: **supplier responses are not immediately decision-comparable.**
+
+A price is only useful when the buyer knows what it covers, which unit it uses, whether freight and tooling are included, whether the specification matches, whether the supplier is qualified, and what evidence supports it. Without that context, an apparently precise comparison can create false confidence.
+
+I would therefore define the product as an **evidence-backed procurement decision system.** Its core responsibility is to establish comparability before optimizing price. It should separate quoted values from normalized values, distinguish eligible vendors from merely cheap vendors, flag missing or ambiguous information, and preserve the evidence behind every recommendation.
+
+The longer-term opportunity is an **exception-resolution loop:** extract the quote, detect what prevents comparison, generate a targeted clarification request, update the offer when the supplier responds, and preserve the decision history. In other words, the product should not only reduce spreadsheet work; it should reduce the risk of making a high-value award decision on incomplete or falsely comparable data.
+
+My prototype focuses on quote comparison because that is the clearest entry point, but the broader product is **extract → validate → clarify → compare → recommend → audit.**
