@@ -1,7 +1,7 @@
 # Aerchainfinal — RFx Crew (free tabbed workspace)
 
 Evidence-minded sourcing prototype for corrugated packaging. A buyer works in a
-**free tabbed workspace**: Draft | Send | Inbox | Compare | Ask | Award. Open any
+**free tabbed workspace**: Draft | Outbox | Inbox | Compare | Ask | Award. Open any
 tab anytime — empty panels explain what’s missing (no unlock gates). Five agents
 power each stage; the orchestrator persists state under `data/store/`.
 
@@ -14,7 +14,7 @@ Entrypoint: `app_crew:app` (not the older kill-the-quote-spreadsheet project).
 | Tab | What the buyer does | Agent |
 |---|---|---|
 | **Draft** | Edit brief + title/scope/terms → **Generate line items** (30 lines + questionnaire + vendors) → tweak lines | RFx Drafter |
-| **Send** | Review cover email previews → **Send to vendors** → outbox confirmation | Vendor Dispatcher (SMTP stubbed → `data/outbox/`) |
+| **Outbox** | Review cover email previews → **Send to vendors** → outbox confirmation | Vendor Dispatcher (SMTP stubbed → `data/outbox/`) |
 | **Inbox** | Seed/upload stub replies → **Parse** / **Parse all** → quotations + questionnaire answers | Document Parser |
 | **Compare** | Side-by-side INR matrix, coverage, knockout pass/fail badges; only qualified vendors are award-eligible | Normalizer + qualification |
 | **Ask** | Persistent live chat with the Analyst (history kept) | Analyst |

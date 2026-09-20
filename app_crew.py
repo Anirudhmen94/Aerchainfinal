@@ -181,6 +181,24 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
             award_gaps = {}
             eligibility_reasons_by_line = {}
 
+    # Partial award candidates + request status (manager approval workflow)
+    partial_by_line: dict[str, list[dict]] = {}
+    partial_status_by_line: dict[str, dict] = {}
+    if pipe.rfx and pipe.comparison:
+        for li in pipe.rfx.line_items:
+            try:
+                partial_by_line[li.line_id] = pipe.partial_candidates_for_line(li.line_id)
+            except Exception:
+                partial_by_line[li.line_id] = []
+            st = pipe.partial_status_for_line(li.line_id)
+            if st:
+                partial_status_by_line[li.line_id] = st
+    pending_partials = [
+        r for r in (getattr(pipe, "partial_requests", None) or [])
+        if r.get("status") == "pending"
+    ]
+    all_partials = list(getattr(pipe, "partial_requests", None) or [])
+
     return {
         "pipe": pipe,
         "rfx": pipe.rfx,
@@ -207,6 +225,10 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "freeze": getattr(pipe, "freeze", None),
         "is_frozen": bool(getattr(pipe, "freeze", None)),
         "review_log": list(getattr(pipe, "review_log", None) or []),
+        "partial_by_line": partial_by_line,
+        "partial_status_by_line": partial_status_by_line,
+        "pending_partials": pending_partials,
+        "all_partials": all_partials,
     }
 
 
@@ -709,6 +731,58 @@ def crew_award_suggest(rfx_id: str):
         return HTMLResponse("RFx not found", status_code=404)
     try:
         pipe.suggest_awards()
+    except Exception as exc:
+        return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=award", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/award/partial/request", response_class=HTMLResponse)
+async def crew_award_partial_request(request: Request, rfx_id: str):
+    """Buyer: request partial award for a non-fully-eligible vendor (needs manager approval)."""
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    form = await request.form()
+    line_id = str(form.get("line_id") or "").strip()
+    vendor_id = str(form.get("vendor_id") or "").strip()
+    note = str(form.get("buyer_note") or form.get("note") or "").strip()
+    try:
+        pipe.request_partial_award(line_id, vendor_id, note)
+    except Exception as exc:
+        return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=award", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/award/partial/approve", response_class=HTMLResponse)
+async def crew_award_partial_approve(request: Request, rfx_id: str):
+    """Manager stub: approve a pending partial award request."""
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    form = await request.form()
+    request_id = str(form.get("request_id") or "").strip()
+    comment = str(form.get("manager_comment") or form.get("comment") or "").strip()
+    try:
+        pipe.approve_partial_award(request_id, manager_comment=comment)
+    except Exception as exc:
+        return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=award", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/award/partial/reject", response_class=HTMLResponse)
+async def crew_award_partial_reject(request: Request, rfx_id: str):
+    """Manager stub: reject a pending partial award request."""
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    form = await request.form()
+    request_id = str(form.get("request_id") or "").strip()
+    comment = str(form.get("manager_comment") or form.get("comment") or "").strip()
+    try:
+        pipe.reject_partial_award(request_id, manager_comment=comment)
     except Exception as exc:
         return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
     _save(pipe)

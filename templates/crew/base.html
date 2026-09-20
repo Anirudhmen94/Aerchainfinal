@@ -31,13 +31,76 @@
     .status-missing { background:#e2e8f0; color:#475569; }
     .status-uncertain { background:#fde68a; color:#92400e; }
     .status-uom_mismatch { background:#fdba74; color:#9a3412; }
-    table.matrix td, table.matrix th { border:1px solid #e2e8f0; padding:0.35rem 0.5rem; font-size:0.75rem; }
-    .tab-pill { display:inline-flex; align-items:center; gap:0.4rem; padding:0.4rem 0.85rem; border-radius:9999px; font-size:0.8rem; font-weight:500; border:1px solid transparent; }
+    table.matrix { border-collapse:separate; border-spacing:0; }
+    table.matrix td, table.matrix th { border:1px solid #e2e8f0; padding:0.4rem 0.55rem; font-size:0.75rem; }
+    table.matrix thead th { background:#f8fafc; font-weight:600; color:#334155; }
+    table.matrix tbody tr:nth-child(even) { background:#fafbfc; }
+    table.matrix tbody tr.is-dim { opacity:0.35; }
+    table.matrix tbody tr.is-hidden, table.matrix th.is-hidden, table.matrix td.is-hidden { display:none; }
+    .tab-pill { display:inline-flex; align-items:center; gap:0.4rem; padding:0.4rem 0.85rem; border-radius:9999px; font-size:0.8rem; font-weight:500; border:1px solid transparent; white-space:nowrap; }
     .tab-cur { background:#312e81; color:#fff; border-color:#312e81; }
     .tab-open { background:#fff; color:#334155; border-color:#cbd5e1; }
     .tab-open:hover { background:#f8fafc; border-color:#94a3b8; }
     .tab-done-dot { width:0.45rem; height:0.45rem; border-radius:9999px; background:#22c55e; display:inline-block; }
-    .empty-hint { background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:0.75rem; padding:1rem; font-size:0.875rem; }
+    .empty-hint { background:#f8fafc; border:1px dashed #cbd5e1; color:#64748b; border-radius:0.75rem; padding:1rem; font-size:0.875rem; }
+    .empty-hint a { color:#4338ca; font-weight:500; }
+
+    .workspace-sticky {
+      position:sticky; top:0; z-index:30; background:rgba(248,250,252,0.92);
+      backdrop-filter:blur(8px); border-bottom:1px solid #e2e8f0;
+      margin:0 -1rem 1.25rem; padding:0.85rem 1rem 0.75rem;
+    }
+    @media (min-width:72rem) {
+      .workspace-sticky { margin-left:calc((100% - 72rem) / 2 * -1); margin-right:calc((100% - 72rem) / 2 * -1); padding-left:calc((100% - 72rem) / 2 + 1rem); padding-right:calc((100% - 72rem) / 2 + 1rem); }
+    }
+    .section-muted { color:#64748b; font-size:0.875rem; line-height:1.45; }
+    .filter-bar {
+      display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center;
+      background:#f8fafc; border:1px solid #e2e8f0; border-radius:0.65rem;
+      padding:0.55rem 0.75rem; font-size:0.75rem;
+    }
+    .filter-bar input[type="search"], .filter-bar select {
+      border:1px solid #cbd5e1; border-radius:0.4rem; background:#fff;
+      padding:0.3rem 0.5rem; font-size:0.75rem; color:#1e293b; min-width:7rem;
+    }
+    .filter-bar input[type="search"] { min-width:10rem; flex:1; }
+    .filter-count { color:#64748b; font-variant-numeric:tabular-nums; margin-left:auto; white-space:nowrap; }
+    .cell-dim { opacity:0.22 !important; filter:grayscale(0.4); }
+    .col-hidden { display:none !important; }
+
+    .tip-banner {
+      display:flex; gap:0.65rem; align-items:flex-start;
+      background:#eef2ff; border:1px solid #c7d2fe; color:#312e81;
+      border-radius:0.65rem; padding:0.65rem 0.85rem; font-size:0.8rem; line-height:1.45;
+    }
+    .tip-banner .tip-icon {
+      flex-shrink:0; width:1.25rem; height:1.25rem; border-radius:9999px;
+      background:#312e81; color:#fff; font-size:0.7rem; font-weight:700;
+      display:inline-flex; align-items:center; justify-content:center;
+    }
+    .tip-banner .tip-body { flex:1; min-width:0; }
+    .tip-banner .tip-dismiss {
+      flex-shrink:0; border:0; background:transparent; color:#6366f1;
+      font-size:0.7rem; cursor:pointer; padding:0.1rem 0.25rem; border-radius:0.25rem;
+    }
+    .tip-banner .tip-dismiss:hover { background:#e0e7ff; }
+    .tip-banner[hidden] { display:none !important; }
+
+    .tip-q {
+      position:relative; display:inline-flex; align-items:center; justify-content:center;
+      width:1rem; height:1rem; border-radius:9999px; border:1px solid #a5b4fc;
+      background:#eef2ff; color:#4338ca; font-size:0.65rem; font-weight:700;
+      cursor:help; vertical-align:middle; margin-left:0.2rem;
+    }
+    .tip-q::after {
+      content:attr(data-tip); position:absolute; left:50%; bottom:calc(100% + 6px);
+      transform:translateX(-50%); width:max-content; max-width:16rem;
+      background:#0f172a; color:#f8fafc; font-size:0.7rem; font-weight:400;
+      line-height:1.35; padding:0.4rem 0.55rem; border-radius:0.4rem;
+      opacity:0; pointer-events:none; transition:opacity 0.12s; z-index:40;
+      box-shadow:0 4px 12px rgba(15,23,42,0.2); white-space:normal; text-align:left;
+    }
+    .tip-q:hover::after, .tip-q:focus::after { opacity:1; }
 
     .provisional-banner { background:#fffbeb; border:1px solid #f59e0b; color:#92400e; border-radius:0.75rem; padding:0.75rem 1rem; font-size:0.875rem; display:flex; gap:0.75rem; align-items:flex-start; }
     .provisional-banner strong { font-weight:600; }
@@ -49,22 +112,18 @@
     .price-cell:hover { outline:2px solid #818cf8; outline-offset:-2px; }
     .evidence-backdrop { position:fixed; inset:0; background:rgba(15,23,42,0.35); z-index:40; }
     .ko-chart-wrap { position:relative; height:220px; max-width:100%; margin:0.75rem 0 1rem; }
-    .q-pass { background:#ecfdf5; }
-    .q-fail { background:#fef2f2; }
-    .q-unanswered { background:#f8fafc; }
-    .evidence-drawer { position:fixed; top:0; right:0; height:100%; width:min(28rem,100%); background:#fff; z-index:50; box-shadow:-8px 0 24px rgba(15,23,42,0.15); overflow:auto; padding:1.25rem; }
-    .evidence-drawer h3 { font-size:1rem; font-weight:600; margin-bottom:0.25rem; }
-    .evidence-meta { font-size:0.75rem; color:#64748b; margin-bottom:0.75rem; }
-    .evidence-snippet { background:#f8fafc; border:1px solid #e2e8f0; border-radius:0.5rem; padding:0.5rem 0.75rem; font-size:0.75rem; margin-bottom:0.5rem; }
-    .evidence-snippet .loc { color:#64748b; font-size:0.65rem; margin-top:0.25rem; }
-
-
     .q-pass { background:#ecfdf5; color:#14532d; }
     .q-fail { background:#fef2f2; color:#991b1b; }
     .q-unanswered { background:#f8fafc; color:#94a3b8; }
     .q-cell { font-size:0.7rem; text-align:center; vertical-align:top; min-width:6.5rem; }
     .q-cell .ans { display:block; margin-top:0.15rem; font-weight:500; max-width:9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-left:auto; margin-right:auto; }
     .ko-badge { display:inline-block; font-size:0.6rem; padding:0.05rem 0.3rem; border-radius:9999px; background:#fee2e2; color:#991b1b; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; }
+
+    .evidence-drawer { position:fixed; top:0; right:0; height:100%; width:min(28rem,100%); background:#fff; z-index:50; box-shadow:-8px 0 24px rgba(15,23,42,0.15); overflow:auto; padding:1.25rem; }
+    .evidence-drawer h3 { font-size:1rem; font-weight:600; margin-bottom:0.25rem; }
+    .evidence-meta { font-size:0.75rem; color:#64748b; margin-bottom:0.75rem; }
+    .evidence-snippet { background:#f8fafc; border:1px solid #e2e8f0; border-radius:0.5rem; padding:0.5rem 0.75rem; font-size:0.75rem; margin-bottom:0.5rem; }
+    .evidence-snippet .loc { color:#64748b; font-size:0.65rem; margin-top:0.25rem; }
 
     .sad-dialog-backdrop {
       position:fixed; inset:0; background:rgba(15,23,42,0.45); z-index:60;
@@ -88,14 +147,174 @@
 </head>
 <body class="bg-slate-50 text-slate-900 min-h-screen">
   <header class="border-b border-slate-200 bg-white no-print">
-    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+    <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="/" class="font-semibold tracking-tight">Aerchain <span class="text-indigo-600">RFx Crew</span></a>
       <nav class="text-sm text-slate-500">Free tabbed workspace</nav>
     </div>
   </header>
-  <main class="max-w-6xl mx-auto px-4 py-8">
+  <main class="max-w-6xl mx-auto px-4 py-6">
     {% block content %}{% endblock %}
   </main>
   <div id="evidence-root"></div>
+  <script>
+  (function () {
+    function norm(s) { return (s || '').toString().toLowerCase().trim(); }
+
+    function bindTipDismiss() {
+      document.querySelectorAll('[data-tip-key]').forEach(function (el) {
+        var key = 'aerchain_tip_' + el.getAttribute('data-tip-key');
+        try { if (localStorage.getItem(key)) { el.hidden = true; return; } } catch (e) {}
+        var btn = el.querySelector('.tip-dismiss');
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+          el.hidden = true;
+          try { localStorage.setItem(key, '1'); } catch (e) {}
+        });
+      });
+    }
+
+    function updateCount(root, shown, total) {
+      var el = root.querySelector('[data-filter-count]');
+      if (el) el.textContent = 'Showing ' + shown + ' of ' + total;
+    }
+
+    function bindRowFilters(root) {
+      if (!root || root._filterBound) return;
+      root._filterBound = true;
+      var rows = function () { return Array.prototype.slice.call(root.querySelectorAll('[data-filter-row]')); };
+      var apply = function () {
+        var q = norm((root.querySelector('[data-filter-search]') || {}).value);
+        var vendor = norm((root.querySelector('[data-filter-vendor]') || {}).value);
+        var type = norm((root.querySelector('[data-filter-type]') || {}).value);
+        var format = norm((root.querySelector('[data-filter-format]') || {}).value);
+        var status = norm((root.querySelector('[data-filter-status]') || {}).value);
+        var assign = norm((root.querySelector('[data-filter-assign]') || {}).value);
+        var list = rows();
+        var shown = 0;
+        list.forEach(function (row) {
+          var hay = norm(row.getAttribute('data-search') || row.textContent);
+          var ok = true;
+          if (q && hay.indexOf(q) === -1) ok = false;
+          if (ok && vendor && vendor !== 'all') {
+            var rv = norm(row.getAttribute('data-vendor') || '');
+            if (rv !== vendor) ok = false;
+          }
+          if (ok && type && type !== 'all') {
+            if (norm(row.getAttribute('data-type') || '') !== type) ok = false;
+          }
+          if (ok && format && format !== 'all') {
+            if (norm(row.getAttribute('data-format') || '') !== format) ok = false;
+          }
+          if (ok && status && status !== 'all') {
+            var rs = norm(row.getAttribute('data-status') || '');
+            if (status === 'parsed') ok = (rs === 'parsed');
+            else if (status === 'not_parsed') ok = (rs !== 'parsed');
+            else if (status === 'assigned') ok = (rs === 'assigned');
+            else if (status === 'unassigned') ok = (rs === 'unassigned');
+            else ok = (rs === status);
+          }
+          if (ok && assign && assign !== 'all') {
+            var ra = norm(row.getAttribute('data-assign') || '');
+            if (assign === 'assigned') ok = (ra === 'assigned');
+            else if (assign === 'unassigned') ok = (ra === 'unassigned');
+          }
+          row.classList.toggle('is-hidden', !ok);
+          row.style.display = ok ? '' : 'none';
+          if (ok) shown++;
+        });
+        updateCount(root, shown, list.length);
+      };
+      root.querySelectorAll('input, select').forEach(function (inp) {
+        inp.addEventListener('input', apply);
+        inp.addEventListener('change', apply);
+      });
+      apply();
+    }
+
+    function bindCompareFilters(root) {
+      if (!root || root._cmpBound) return;
+      root._cmpBound = true;
+      var priceTable = root.querySelector('[data-price-matrix]');
+      var qTable = root.querySelector('[data-q-matrix]');
+      var apply = function () {
+        var q = norm((root.querySelector('[data-filter-search]') || {}).value);
+        var vmode = norm((root.querySelector('[data-filter-vendor-vis]') || {}).value) || 'all';
+        var cellSt = norm((root.querySelector('[data-filter-cell-status]') || {}).value) || 'all';
+
+        function vendorVisible(passAttr) {
+          if (vmode === 'all') return true;
+          var isPass = passAttr === '1' || passAttr === 'true' || passAttr === 'pass';
+          if (vmode === 'pass') return isPass;
+          if (vmode === 'fail') return !isPass;
+          return true;
+        }
+
+        var shown = 0, total = 0;
+
+        if (priceTable) {
+          var headers = priceTable.querySelectorAll('thead th[data-vendor]');
+          headers.forEach(function (th) {
+            var show = vendorVisible(th.getAttribute('data-pass'));
+            th.classList.toggle('col-hidden', !show);
+            var vid = th.getAttribute('data-vendor');
+            priceTable.querySelectorAll('td[data-vendor="' + vid + '"]').forEach(function (td) {
+              td.classList.toggle('col-hidden', !show);
+            });
+          });
+          var rows = priceTable.querySelectorAll('tbody tr[data-filter-row]');
+          total = rows.length;
+          rows.forEach(function (row) {
+            var hay = norm(row.getAttribute('data-search') || '');
+            var okSearch = !q || hay.indexOf(q) !== -1;
+            var cells = row.querySelectorAll('td[data-status]');
+            var hasMatch = cellSt === 'all';
+            cells.forEach(function (td) {
+              if (td.classList.contains('col-hidden')) return;
+              var st = norm(td.getAttribute('data-status') || '');
+              var match = (cellSt === 'all') || (st === cellSt);
+              td.classList.toggle('cell-dim', cellSt !== 'all' && !match);
+              if (match) hasMatch = true;
+            });
+            var ok = okSearch && (cellSt === 'all' || hasMatch);
+            row.style.display = ok ? '' : 'none';
+            if (ok) shown++;
+          });
+        }
+
+        if (qTable) {
+          qTable.querySelectorAll('thead th[data-vendor]').forEach(function (th) {
+            var show = vendorVisible(th.getAttribute('data-pass'));
+            th.classList.toggle('col-hidden', !show);
+            var vid = th.getAttribute('data-vendor');
+            qTable.querySelectorAll('td[data-vendor="' + vid + '"]').forEach(function (td) {
+              td.classList.toggle('col-hidden', !show);
+            });
+          });
+        }
+
+        updateCount(root, shown || total, total);
+      };
+      root.querySelectorAll('input, select').forEach(function (inp) {
+        inp.addEventListener('input', apply);
+        inp.addEventListener('change', apply);
+      });
+      apply();
+    }
+
+    function initFilters() {
+      document.querySelectorAll('[data-filter-root]').forEach(bindRowFilters);
+      document.querySelectorAll('[data-compare-filters]').forEach(bindCompareFilters);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      bindTipDismiss();
+      initFilters();
+    });
+    document.body.addEventListener('htmx:afterSettle', function () {
+      bindTipDismiss();
+      initFilters();
+    });
+  })();
+  </script>
 </body>
 </html>

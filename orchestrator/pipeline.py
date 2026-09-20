@@ -1,4 +1,4 @@
-"""Orchestrator — free tabbed workspace: Draft | Send | Inbox | Compare | Ask | Award.
+"""Orchestrator — free tabbed workspace: Draft | Outbox | Inbox | Compare | Ask | Award.
 
 Wires public agent APIs; persists snapshots under data/store/.
 Navigation is free — wizard_step is the last-open tab, not a lock gate.
@@ -94,6 +94,7 @@ class RFxPipeline:
         self.award_notice_paths: list[str] = []
         self.freeze: Optional[dict[str, Any]] = None
         self.review_log: list[dict[str, Any]] = []
+        self.partial_requests: list[dict[str, Any]] = []
         self.step: str = "idle"
         self.wizard_step: str = "draft"
 
@@ -519,6 +520,261 @@ class RFxPipeline:
         out.sort(key=lambda r: (r["unit_price_inr"] is None, r["unit_price_inr"] or 0))
         return out
 
+    def partial_candidates_for_line(self, line_id: str) -> list[dict[str, Any]]:
+        """Priced vendors who are NOT fully award-eligible (need manager approval)."""
+        if not self.comparison:
+            return []
+        qual = set(self.qualified_vendor_ids())
+        names = dict(self.comparison.vendor_names or {})
+        if self.rfx:
+            names = {**{v.vendor_id: v.name for v in self.rfx.vendors}, **names}
+        # Build gap notes from qualifications
+        gap_by_vendor: dict[str, list[str]] = {}
+        for q in self.comparison.qualifications or []:
+            vid = getattr(q, "vendor_id", None) or (q.get("vendor_id") if isinstance(q, dict) else None)
+            if not vid or vid in qual:
+                continue
+            reasons = list(getattr(q, "reasons", None) or (q.get("reasons") if isinstance(q, dict) else []) or [])
+            for kr in getattr(q, "knockout_results", None) or []:
+                passed = getattr(kr, "passed", None) if not isinstance(kr, dict) else kr.get("passed")
+                qid = getattr(kr, "question_id", None) if not isinstance(kr, dict) else kr.get("question_id")
+                reason = getattr(kr, "reason", None) if not isinstance(kr, dict) else kr.get("reason")
+                if passed is False:
+                    reasons.append(f"Failed KO {qid}" + (f": {reason}" if reason else ""))
+                elif passed is None:
+                    reasons.append(f"Unanswered KO {qid}")
+            # de-dupe
+            seen: set[str] = set()
+            uniq: list[str] = []
+            for r in reasons:
+                s = str(r).strip()
+                if s and s not in seen:
+                    seen.add(s)
+                    uniq.append(s)
+            gap_by_vendor[str(vid)] = uniq or ["Not fully award-eligible (questionnaire / coverage)"]
+
+        out: list[dict[str, Any]] = []
+        for cell in self.comparison.cells:
+            if cell.line_id != line_id:
+                continue
+            if cell.vendor_id in qual:
+                continue
+            if cell.unit_price_inr is None:
+                continue
+            if cell.status in ("missing",):
+                continue
+            gaps = list(gap_by_vendor.get(cell.vendor_id) or ["Not fully award-eligible"])
+            if cell.status in ("uncertain", "uom_mismatch"):
+                gaps.append(f"Price cell status: {cell.status}")
+            out.append(
+                {
+                    "vendor_id": cell.vendor_id,
+                    "name": names.get(cell.vendor_id, cell.vendor_id),
+                    "unit_price_inr": cell.unit_price_inr,
+                    "status": cell.status,
+                    "gaps": gaps,
+                }
+            )
+        out.sort(key=lambda r: (r["unit_price_inr"] is None, r["unit_price_inr"] or 0))
+        return out
+
+    def pending_partial_for_line(self, line_id: str) -> Optional[dict[str, Any]]:
+        for req in self.partial_requests:
+            if req.get("line_id") == line_id and req.get("status") == "pending":
+                return req
+        return None
+
+    def partial_status_for_line(self, line_id: str) -> Optional[dict[str, Any]]:
+        """Latest non-superseded partial request for a line (pending / approved / rejected)."""
+        latest = None
+        for req in self.partial_requests:
+            if req.get("line_id") == line_id:
+                latest = req
+        return latest
+
+    def request_partial_award(
+        self,
+        line_id: str,
+        vendor_id: str,
+        buyer_note: str,
+    ) -> dict[str, Any]:
+        if not self.comparison or not self.rfx:
+            raise RuntimeError("Compare quotes before requesting a partial award.")
+        if self.is_frozen:
+            raise RuntimeError("Award is frozen — unfreeze before editing.")
+        note = (buyer_note or "").strip()
+        if len(note) < 8:
+            raise RuntimeError("Buyer justification required (at least a short note).")
+        line_id = str(line_id).strip()
+        vendor_id = str(vendor_id).strip()
+        if not line_id or not vendor_id:
+            raise RuntimeError("line_id and vendor_id are required.")
+        if line_id in self.awards and self.awards[line_id] == vendor_id:
+            raise RuntimeError("That vendor is already awarded on this line.")
+        # Must be a partial candidate (priced + not fully eligible)
+        cands = {c["vendor_id"]: c for c in self.partial_candidates_for_line(line_id)}
+        if vendor_id not in cands:
+            # Fully eligible vendors use the normal award path
+            elig = {e["vendor_id"] for e in self.eligible_vendors_for_line(line_id)}
+            if vendor_id in elig:
+                raise RuntimeError(
+                    "Vendor is fully award-eligible — use the normal Award dropdown (no approval needed)."
+                )
+            raise RuntimeError("Vendor has no usable price on this line (or is missing).")
+        cand = cands[vendor_id]
+        # Replace any existing pending for this line
+        kept: list[dict[str, Any]] = []
+        for req in self.partial_requests:
+            if req.get("line_id") == line_id and req.get("status") == "pending":
+                continue
+            kept.append(req)
+        self.partial_requests = kept
+        req_id = f"PA-{uuid.uuid4().hex[:8].upper()}"
+        names = dict(self.comparison.vendor_names or {})
+        if self.rfx:
+            names = {**{v.vendor_id: v.name for v in self.rfx.vendors}, **names}
+        entry = {
+            "request_id": req_id,
+            "line_id": line_id,
+            "vendor_id": vendor_id,
+            "vendor_name": names.get(vendor_id, cand.get("name") or vendor_id),
+            "unit_price_inr": cand.get("unit_price_inr"),
+            "gaps": list(cand.get("gaps") or []),
+            "buyer_note": note,
+            "status": "pending",
+            "manager_comment": "",
+            "requested_at": self._now_iso(),
+            "resolved_at": "",
+            "provisional": True,
+        }
+        self.partial_requests.append(entry)
+        gap_txt = "; ".join(entry["gaps"][:3]) if entry["gaps"] else "partial qualification"
+        self.append_review_log(
+            "partial_award_requested",
+            f"{req_id} · {line_id} → {vendor_id} · {gap_txt} · note: {note[:120]}",
+            actor="buyer",
+            persist=False,
+        )
+        self.wizard_step = "award"
+        self._persist()
+        return entry
+
+    def approve_partial_award(
+        self,
+        request_id: str,
+        manager_comment: str = "",
+    ) -> dict[str, Any]:
+        if self.is_frozen:
+            raise RuntimeError("Award is frozen — unfreeze before approving.")
+        req = next((r for r in self.partial_requests if r.get("request_id") == request_id), None)
+        if not req:
+            raise RuntimeError("Partial award request not found.")
+        if req.get("status") != "pending":
+            raise RuntimeError(f"Request is already {req.get('status')}.")
+        req["status"] = "approved"
+        req["manager_comment"] = (manager_comment or "").strip()
+        req["resolved_at"] = self._now_iso()
+        req["provisional"] = False
+        # Promote into firm awards (bypass normal qual gate — manager approved)
+        lid = str(req["line_id"])
+        vid = str(req["vendor_id"])
+        self.awards[lid] = vid
+        # Refresh validation display without rejecting this line
+        try:
+            # Keep other awards; re-validate only firm eligible ones, then re-add approved partials
+            firm = {
+                k: v
+                for k, v in self.awards.items()
+                if not any(
+                    r.get("line_id") == k
+                    and r.get("vendor_id") == v
+                    and r.get("status") == "approved"
+                    for r in self.partial_requests
+                )
+            }
+            # Actually all approved partials are in awards; validate may reject them.
+            # Store a lightweight award_validation patch instead.
+            result = validate_award(
+                self.comparison,
+                qualifications=self.qualified_vendor_ids(),
+                awards={k: v for k, v in self.awards.items() if k != lid},
+                rfx=self.rfx,
+            )
+            # Merge approved partials back into awards map (already set)
+            # Annotate validation so UI totals can include them
+            lines = list(result.get("awards") or [])
+            price = req.get("unit_price_inr")
+            qty = 1.0
+            if self.rfx:
+                for li in self.rfx.line_items:
+                    if li.line_id == lid:
+                        qty = float(li.qty or 1)
+                        break
+            ext = float(price or 0) * qty
+            lines.append(
+                {
+                    "line_id": lid,
+                    "vendor_id": vid,
+                    "unit_price_inr": price,
+                    "extended_inr": ext,
+                    "partial_approved": True,
+                }
+            )
+            result["awards"] = lines
+            totals = dict(result.get("totals") or {})
+            gt = float(totals.get("grand_total_inr") or totals.get("grand_total_partial_inr") or 0)
+            totals["grand_total_inr"] = gt + ext
+            totals["grand_total_partial_inr"] = totals["grand_total_inr"]
+            result["totals"] = totals
+            self.award_validation = result
+        except Exception:
+            pass
+        detail = f"{request_id} · {lid} → {vid}"
+        if manager_comment:
+            detail = f"{detail} — {manager_comment.strip()[:120]}"
+        self.append_review_log(
+            "partial_award_approved",
+            detail,
+            actor="manager",
+            persist=False,
+        )
+        self.wizard_step = "award"
+        self._persist()
+        return req
+
+    def reject_partial_award(
+        self,
+        request_id: str,
+        manager_comment: str = "",
+    ) -> dict[str, Any]:
+        if self.is_frozen:
+            raise RuntimeError("Award is frozen — unfreeze before rejecting.")
+        req = next((r for r in self.partial_requests if r.get("request_id") == request_id), None)
+        if not req:
+            raise RuntimeError("Partial award request not found.")
+        if req.get("status") != "pending":
+            raise RuntimeError(f"Request is already {req.get('status')}.")
+        req["status"] = "rejected"
+        req["manager_comment"] = (manager_comment or "").strip()
+        req["resolved_at"] = self._now_iso()
+        req["provisional"] = False
+        # Ensure not sitting in firm awards
+        lid = str(req["line_id"])
+        if self.awards.get(lid) == req.get("vendor_id"):
+            self.awards.pop(lid, None)
+        detail = f"{request_id} · {lid} → {req.get('vendor_id')}"
+        if manager_comment:
+            detail = f"{detail} — {manager_comment.strip()[:120]}"
+        self.append_review_log(
+            "partial_award_rejected",
+            detail,
+            actor="manager",
+            persist=False,
+        )
+        self.wizard_step = "award"
+        self._persist()
+        return req
+
     def _now_iso(self) -> str:
         return datetime.now(timezone.utc).isoformat()
 
@@ -554,6 +810,12 @@ class RFxPipeline:
             raise RuntimeError("Save awards before freezing.")
         if self.freeze:
             raise RuntimeError("Award is already frozen.")
+        pending = [r for r in self.partial_requests if r.get("status") == "pending"]
+        if pending:
+            raise RuntimeError(
+                f"{len(pending)} partial award request(s) still pending manager approval — "
+                "resolve them before freezing."
+            )
         summary = self.award_summary()
         pass_vendors: list[dict[str, Any]] = []
         try:
@@ -631,10 +893,34 @@ class RFxPipeline:
             raise RuntimeError("Compare quotes before awarding.")
         if self.is_frozen:
             raise RuntimeError("Award is frozen — unfreeze before editing.")
+        # Approved partials may be submitted even though vendor is not fully eligible.
+        approved_map = {
+            str(r.get("line_id")): str(r.get("vendor_id"))
+            for r in self.partial_requests
+            if r.get("status") == "approved" and r.get("line_id") and r.get("vendor_id")
+        }
+        # Split: fully-eligible awards vs approved-partial lines
+        firm_input: dict[str, str] = {}
+        partial_keep: dict[str, str] = {}
+        qual = set(self.qualified_vendor_ids())
+        for lid, vid in (awards or {}).items():
+            lid, vid = str(lid), str(vid)
+            if not lid or not vid:
+                continue
+            if vid in qual:
+                firm_input[lid] = vid
+            elif approved_map.get(lid) == vid:
+                partial_keep[lid] = vid
+            elif lid in approved_map and approved_map[lid] != vid:
+                # Buyer reassigned away from approved partial — drop that approval link
+                firm_input[lid] = vid  # may still be rejected by validate if not qual
+            else:
+                # Not eligible and not approved — let validate reject
+                firm_input[lid] = vid
         result = validate_award(
             self.comparison,
             qualifications=self.qualified_vendor_ids(),
-            awards=awards,
+            awards=firm_input,
             rfx=self.rfx,
         )
         cleaned: dict[str, str] = {}
@@ -643,6 +929,11 @@ class RFxPipeline:
             vid = str(row.get("vendor_id") or "")
             if lid and vid:
                 cleaned[lid] = vid
+        # Re-apply approved partials the buyer still wants
+        for lid, vid in partial_keep.items():
+            cleaned[lid] = vid
+        # If buyer cleared a line that had approved partial (not in awards), drop from cleaned
+        # (already absent). Mark those requests as superseded? leave history as approved.
         self.awards = cleaned
         self.award_validation = result
         self.step = "awarded"
@@ -651,6 +942,18 @@ class RFxPipeline:
         total = (result.get("totals") or {}).get("grand_total_inr") or (
             result.get("totals") or {}
         ).get("grand_total_partial_inr") or 0.0
+        # Add partial approved extended values roughly
+        if self.rfx:
+            for lid, vid in partial_keep.items():
+                for req in self.partial_requests:
+                    if req.get("line_id") == lid and req.get("vendor_id") == vid and req.get("status") == "approved":
+                        qty = 1.0
+                        for li in self.rfx.line_items:
+                            if li.line_id == lid:
+                                qty = float(li.qty or 1)
+                                break
+                        total = float(total) + float(req.get("unit_price_inr") or 0) * qty
+                        break
         self.append_review_log(
             "award_saved",
             f"{n} line(s) · ₹{float(total):.2f}",
@@ -1114,6 +1417,7 @@ class RFxPipeline:
             "award_notice_paths": list(self.award_notice_paths or []),
             "freeze": self.freeze,
             "review_log": list(self.review_log or []),
+            "partial_requests": list(self.partial_requests or []),
         }
 
     def load_snapshot(self, data: dict[str, Any]) -> None:
@@ -1146,6 +1450,7 @@ class RFxPipeline:
         self.award_notice_paths = list(data.get("award_notice_paths") or [])
         self.freeze = data.get("freeze") or None
         self.review_log = list(data.get("review_log") or [])
+        self.partial_requests = list(data.get("partial_requests") or [])
 
     def _persist(self) -> None:
         if not self.rfx:

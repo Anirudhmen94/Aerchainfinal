@@ -21,9 +21,9 @@ Home → start with the Chakan snacks / corrugated brief → **Generate line ite
 Board shows ~30 lines, knockout questionnaire, five vendors. Note `rfx_id`.
 Tabs stay open — jump ahead anytime (empty panels explain what’s missing).
 
-## 2. Send (1 min)
+## 2. Outbox (1 min)
 
-Open **Send** (or use Open Send). Cover email previews → **Send to vendors**. Outbox
+Open **Outbox**. Cover email previews → **Send to vendors**. Outbox
 (`data/outbox/`) has one stub email per vendor. Nothing hit SMTP.
 
 ## 3. Inbox — ugly edges (2–3 min)

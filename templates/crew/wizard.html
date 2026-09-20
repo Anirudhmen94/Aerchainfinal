@@ -1,25 +1,25 @@
 {% extends "crew/base.html" %}
 {% block title %}{{ rfx.title }} · Workspace{% endblock %}
 {% block content %}
-{% set labels = {"draft":"Draft","send":"Send","inbox":"Inbox","compare":"Compare","ask":"Ask","award":"Award","audit":"Audit"} %}
+{% set labels = {"draft":"Draft","send":"Outbox","inbox":"Inbox","compare":"Compare","ask":"Ask","award":"Award","audit":"Audit"} %}
 
-<div class="mb-6 no-print">
+<div class="workspace-sticky no-print">
   <div class="text-xs text-slate-500">{{ rfx.rfx_id }}</div>
-  <h1 class="text-2xl font-semibold">{{ rfx.title }}</h1>
-  <nav class="mt-4 flex flex-wrap items-center gap-2" aria-label="Workspace tabs">
+  <h1 class="text-xl font-semibold tracking-tight">{{ rfx.title }}</h1>
+  <nav class="mt-3 flex flex-wrap items-center gap-2" aria-label="Workspace tabs">
     {% for s in steps %}
       {% set is_cur = s == step %}
       {% set is_done = done.get(s) %}
       <a href="/crew/{{ rfx.rfx_id }}/wizard?step={{ s }}"
          class="tab-pill {% if is_cur %}tab-cur{% else %}tab-open{% endif %}"
-         {% if is_cur %}aria-current="page"{% endif %}>
+         {% if is_cur %}aria-current="page"{% endif %}
+         title="{{ labels[s] }} tab">
         {{ labels[s] }}
         {% if is_done and not is_cur %}<span class="tab-done-dot" title="Has data"></span>{% endif %}
       </a>
     {% endfor %}
   </nav>
 </div>
-
 
 {% if provisional and provisional.active and step in ["inbox", "compare", "award"] %}
 <div class="provisional-banner mb-4 no-print" role="status">
@@ -39,10 +39,19 @@
 {# ═══════════════ DRAFT ═══════════════ #}
 {% if step == "draft" %}
 <section class="card space-y-4">
-  <h2 class="font-medium text-lg">Draft RFx</h2>
-  <p class="text-sm text-slate-600">Edit the brief and fields, then generate line items + questionnaire + vendor list. Tweak lines anytime — other tabs stay open.</p>
+  <div class="tip-banner no-print" data-tip-key="draft" role="note">
+    <span class="tip-icon" aria-hidden="true">i</span>
+    <div class="tip-body"><strong>Draft.</strong> Edit the brief (or keep the happy-path default), then click <em>Generate line items</em>. Next: open <strong>Outbox</strong> to preview vendor emails.</div>
+    <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
+  </div>
+  <div>
+    <h2 class="font-medium text-lg">Draft RFx</h2>
+    <p class="section-muted">Brief → generate lines, questionnaire, and vendors.</p>
+  </div>
   <form method="post" action="/crew/{{ rfx.rfx_id }}/draft/generate" class="space-y-3" id="gen-form">
-    <label class="block text-sm font-medium">Brief</label>
+    <label class="block text-sm font-medium">Brief
+      <span class="tip-q" tabindex="0" role="img" aria-label="Tip: happy-path brief asks for ~30 SKUs and quality knockouts" data-tip="Happy-path brief: ~30 SKUs + ISO/FSC/food-contact knockouts.">?</span>
+    </label>
     <textarea name="brief" rows="5" class="w-full rounded-lg border border-slate-300 p-3 text-sm" required>{{ pipe.brief }}</textarea>
     <div class="grid md:grid-cols-2 gap-3">
       <div>
@@ -58,10 +67,9 @@
       <label class="block text-xs text-slate-500 mb-1">Scope</label>
       <textarea name="scope" rows="3" class="w-full rounded-lg border border-slate-300 p-3 text-sm">{{ rfx.scope }}</textarea>
     </div>
-    <button class="btn" type="submit" id="gen-btn">
+    <button class="btn" type="submit" id="gen-btn" title="Calls RFx Drafter to build line items, questionnaire, and vendor list">
       {% if rfx.line_items %}Regenerate line items{% else %}Generate line items{% endif %}
     </button>
-    <span class="text-xs text-slate-500 ml-2">Calls RFx Drafter (Haiku) · line count follows the brief (default 30)</span>
   </form>
 
   {% if rfx.line_items %}
@@ -86,8 +94,8 @@
       </table>
     </div>
     <div class="flex flex-wrap gap-2">
-      <button class="btn-sec" type="submit">Save line edits</button>
-      <button class="btn-sec" formaction="/crew/{{ rfx.rfx_id }}/draft/continue" formmethod="post">Open Send →</button>
+      <button class="btn-sec" type="submit" title="Save edited line ids, descriptions, qty, UOM">Save line edits</button>
+      <button class="btn-sec" formaction="/crew/{{ rfx.rfx_id }}/draft/continue" formmethod="post" title="Jump to Outbox with cover previews">Open Outbox →</button>
     </div>
   </form>
   <details class="text-sm">
@@ -113,14 +121,24 @@
 </script>
 {% endif %}
 
-{# ═══════════════ SEND ═══════════════ #}
+{# ═══════════════ OUTBOX (step id: send) ═══════════════ #}
 {% if step == "send" %}
 <section class="card space-y-4">
-  <h2 class="font-medium text-lg">Send to vendors</h2>
-  <p class="text-sm text-slate-600">Review cover emails, then send. Dispatcher writes stub emails to <code>data/outbox/</code> (SMTP stubbed).</p>
+  <div class="tip-banner no-print" data-tip-key="outbox" role="note">
+    <span class="tip-icon" aria-hidden="true">i</span>
+    <div class="tip-body"><strong>Outbox.</strong> Preview cover emails, then <em>Send to vendors</em> (stub → <code>data/outbox/</code>). Next: open <strong>Inbox</strong> and seed replies.</div>
+    <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
+  </div>
+  <div>
+    <h2 class="font-medium text-lg">Outbox <span class="text-slate-400 font-normal text-sm">(outbound emails)</span></h2>
+    <p class="section-muted">Review cover emails, then stub-send RFQs (and later award notices) to the outbox.</p>
+  </div>
 
   {% if pipe.cover_previews %}
-  <div class="space-y-3">
+  <div class="space-y-2">
+    <h3 class="text-sm font-medium text-slate-700">Cover email previews
+      <span class="tip-q" tabindex="0" role="img" aria-label="Tip: expand a vendor to read the stub email" data-tip="Expand any vendor to read the stub cover email before sending.">?</span>
+    </h3>
     {% for p in pipe.cover_previews %}
     <details class="border border-slate-200 rounded-lg" {% if loop.first %}open{% endif %}>
       <summary class="cursor-pointer px-3 py-2 text-sm font-medium bg-slate-50 rounded-t-lg">
@@ -137,7 +155,7 @@
     No cover preview yet.
     {% if not rfx.line_items or not rfx.vendors %}
       Generate an RFx with vendors on the
-      <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=draft">Draft</a> tab first.
+      <a href="/crew/{{ rfx.rfx_id }}/wizard?step=draft">Draft</a> tab first.
     {% else %}
       Open this tab after Draft has vendors — previews refresh automatically.
     {% endif %}
@@ -146,39 +164,79 @@
 
   {% if not pipe.dispatch_log %}
   <form method="post" action="/crew/{{ rfx.rfx_id }}/dispatch">
-    <button class="btn" type="submit">Send to {{ rfx.vendors|length }} vendors</button>
+    <button class="btn" type="submit" title="Writes stub RFQ emails into data/outbox/ (no SMTP)">Send to {{ rfx.vendors|length }} vendors</button>
   </form>
   {% else %}
-  <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-    <div class="font-medium text-emerald-900 mb-2">Sent (stubbed) — confirmation</div>
-    <ul class="text-sm space-y-1">
-      {% for row in pipe.dispatch_log %}
-      <li>
-        <span class="chip chip-ok">{{ row.status or row.delivery or 'stubbed' }}</span>
-        {{ row.vendor_name or row.vendor_id }} &lt;{{ row.to or row.email or '' }}&gt;
-        {% if row.path or row.file %}<span class="text-xs text-slate-500"> · {{ row.path or row.file }}</span>{% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-    <p class="text-xs text-slate-600 mt-2">{{ pipe.dispatch_paths|length }} outbox file(s) written.</p>
-  </div>
+  <div data-filter-root class="space-y-2">
+    <div class="filter-bar no-print">
+      <input type="search" data-filter-search placeholder="Search to / subject…" title="Filter by recipient or subject" aria-label="Search outbox" />
+      <select data-filter-vendor title="Filter by vendor" aria-label="Vendor">
+        <option value="all">All vendors</option>
+        {% for v in rfx.vendors %}
+        <option value="{{ v.vendor_id|lower }}">{{ v.vendor_id }} — {{ v.name }}</option>
+        {% endfor %}
+      </select>
+      <select data-filter-type title="RFQ invites vs award notices" aria-label="Type">
+        <option value="all">All types</option>
+        <option value="rfq">RFQ</option>
+        <option value="award_notice">Award notice</option>
+      </select>
+      <span class="filter-count" data-filter-count></span>
+    </div>
 
-  {% if award_notice_paths %}
-  <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-4 mt-3">
-    <div class="font-medium text-indigo-900 mb-2">Award notices (stub)</div>
-    <ul class="text-sm space-y-1">
-      {% for p in award_notice_paths %}
-      <li><span class="chip chip-info">award_notice</span> <code class="text-xs">{{ p }}</code></li>
-      {% endfor %}
-    </ul>
+    <div class="overflow-auto border border-slate-200 rounded-lg">
+      <table class="matrix w-full">
+        <thead class="bg-slate-50 sticky top-0">
+          <tr><th>Type</th><th>Vendor</th><th>To</th><th>Subject</th><th>Status</th><th>File</th></tr>
+        </thead>
+        <tbody>
+        {% for row in pipe.dispatch_log %}
+          {% set kind = row.kind or '' %}
+          {% set subj = row.subject or '' %}
+          {% set path_s = (row.path or row.file or '')|string|lower %}
+          {% set is_award = (kind == 'award_notice') or ('award notice' in subj|lower) or ('award_notice' in path_s) %}
+          {% set row_type = 'award_notice' if is_award else 'rfq' %}
+          <tr data-filter-row
+              data-vendor="{{ (row.vendor_id or '')|lower }}"
+              data-type="{{ row_type }}"
+              data-search="{{ row.vendor_name or '' }} {{ row.vendor_id or '' }} {{ row.to or row.email or '' }} {{ subj }} {{ row.path or row.file or '' }}">
+            <td>{% if row_type == 'award_notice' %}<span class="chip chip-info">Award notice</span>{% else %}<span class="chip">RFQ</span>{% endif %}</td>
+            <td>{{ row.vendor_name or row.vendor_id }}</td>
+            <td class="text-slate-600">{{ row.to or row.email or '—' }}</td>
+            <td class="max-w-xs truncate" title="{{ subj }}">{{ subj or '—' }}</td>
+            <td><span class="chip chip-ok">{{ row.status or row.delivery or 'stubbed' }}</span></td>
+            <td class="text-xs text-slate-500 max-w-[10rem] truncate" title="{{ row.path or row.file or '' }}">{{ row.path or row.file or '' }}</td>
+          </tr>
+        {% endfor %}
+        {% if award_notice_paths %}
+          {% for p in award_notice_paths %}
+          {% set already = false %}
+          {% for row in pipe.dispatch_log %}
+            {% if (row.path or row.file or '') == p %}{% set already = true %}{% endif %}
+          {% endfor %}
+          {% if not already %}
+          <tr data-filter-row data-vendor="" data-type="award_notice" data-search="award notice {{ p }}">
+            <td><span class="chip chip-info">Award notice</span></td>
+            <td>—</td>
+            <td>—</td>
+            <td>Award notice</td>
+            <td><span class="chip chip-ok">stubbed</span></td>
+            <td class="text-xs text-slate-500"><code>{{ p }}</code></td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        {% endif %}
+        </tbody>
+      </table>
+    </div>
+    <p class="text-xs text-slate-500">{{ pipe.dispatch_paths|length }} outbox file(s) written.</p>
   </div>
   {% endif %}
-  <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=inbox">Open Inbox →</a>
-  {% endif %}
+
   <div class="flex flex-wrap gap-2">
     <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=draft">← Draft</a>
     <form method="post" action="/crew/{{ rfx.rfx_id }}/send/continue">
-      <button class="btn-sec" type="submit">Open Inbox →</button>
+      <button class="btn-sec" type="submit" title="Continue to Inbox">Open Inbox →</button>
     </form>
   </div>
 </section>
@@ -187,21 +245,28 @@
 {# ═══════════════ INBOX ═══════════════ #}
 {% if step == "inbox" %}
 <section class="card space-y-4">
-  <h2 class="font-medium text-lg">Inbox / Receive</h2>
-  <p class="text-sm text-slate-600">Stub inbound vendor replies. Parse individually or all at once. Uploads supported.</p>
+  <div class="tip-banner no-print" data-tip-key="inbox" role="note">
+    <span class="tip-icon" aria-hidden="true">i</span>
+    <div class="tip-body"><strong>Inbox.</strong> Seed stub vendor replies (or upload), then <em>Parse all</em>. Next: open <strong>Compare</strong> and build the matrix.</div>
+    <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
+  </div>
+  <div>
+    <h2 class="font-medium text-lg">Inbox</h2>
+    <p class="section-muted">Receive stub replies, parse into structured quotes.</p>
+  </div>
 
   <div class="flex flex-wrap gap-2">
     <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/seed">
-      <button class="btn-sec" type="submit">Seed stub replies</button>
+      <button class="btn-sec" type="submit" title="Copy sample vendor response files into this event's inbox">Seed stub replies</button>
     </form>
     <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/parse-all">
-      <button class="btn" type="submit" {% if not pipe.inbox %}disabled{% endif %}>Parse all</button>
+      <button class="btn" type="submit" {% if not pipe.inbox %}disabled{% endif %} title="Extract lines + questionnaire answers from every inbox message">Parse all</button>
     </form>
   </div>
 
   <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/upload" enctype="multipart/form-data" class="flex flex-wrap gap-2 items-center text-sm">
-    <input type="file" name="files" multiple class="text-xs" />
-    <select name="vendor_id" class="rounded border border-slate-300 text-xs px-2 py-1">
+    <input type="file" name="files" multiple class="text-xs" title="Upload vendor quote files" />
+    <select name="vendor_id" class="rounded border border-slate-300 text-xs px-2 py-1" title="Optional vendor tag for uploads">
       <option value="">Vendor (optional)</option>
       {% for v in rfx.vendors %}<option value="{{ v.vendor_id }}">{{ v.vendor_id }} — {{ v.name }}</option>{% endfor %}
     </select>
@@ -209,35 +274,79 @@
   </form>
 
   {% if pipe.inbox %}
-  <div class="overflow-auto border border-slate-200 rounded-lg">
-    <table class="matrix w-full">
-      <thead class="bg-slate-50"><tr><th>From</th><th>Subject</th><th>Preview</th><th>Status</th><th></th></tr></thead>
-      <tbody>
-      {% for m in pipe.inbox %}
-        <tr>
-          <td class="align-top">
-            <div class="font-medium">{{ m.vendor_name or m.vendor_id }}</div>
-            <div class="text-slate-500">{{ m.from_addr }}</div>
-          </td>
-          <td class="align-top">{{ m.subject }}</td>
-          <td class="align-top max-w-xs truncate" title="{{ m.body_preview }}">{{ m.body_preview }}</td>
-          <td class="align-top">
-            {% if m.status == 'parsed' %}<span class="chip chip-ok">parsed</span>
-            {% elif m.status == 'error' %}<span class="chip chip-bad" title="{{ m.error }}">error</span>
-            {% else %}<span class="chip">new</span>{% endif %}
-          </td>
-          <td class="align-top">
-            {% if m.status != 'parsed' %}
-            <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/parse">
-              <input type="hidden" name="msg_id" value="{{ m.msg_id }}" />
-              <button class="btn-sec text-xs py-1" type="submit">Parse</button>
-            </form>
-            {% endif %}
-          </td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
+  {% set fmt_set = [] %}
+  {% for m in pipe.inbox %}
+    {% set ext = (m.path or '')|string %}
+    {% set f = 'unknown' %}
+    {% if '.' in ext.split('/')[-1] %}
+      {% set f = ext.split('/')[-1].split('.')[-1]|lower %}
+    {% endif %}
+    {% if f not in fmt_set %}{% set _ = fmt_set.append(f) %}{% endif %}
+  {% endfor %}
+
+  <div data-filter-root class="space-y-2">
+    <div class="filter-bar no-print">
+      <input type="search" data-filter-search placeholder="Search vendor / subject / file…" title="Filter inbox rows" aria-label="Search inbox" />
+      <select data-filter-vendor title="Filter by vendor" aria-label="Vendor">
+        <option value="all">All vendors</option>
+        {% for v in rfx.vendors %}
+        <option value="{{ v.vendor_id|lower }}">{{ v.vendor_id }} — {{ v.name }}</option>
+        {% endfor %}
+      </select>
+      <select data-filter-format title="Filter by file format" aria-label="Format">
+        <option value="all">All formats</option>
+        {% for f in fmt_set|sort %}
+        <option value="{{ f }}">{{ f }}</option>
+        {% endfor %}
+      </select>
+      <select data-filter-status title="Parsed vs not parsed" aria-label="Status">
+        <option value="all">All status</option>
+        <option value="parsed">Parsed</option>
+        <option value="not_parsed">Not parsed</option>
+      </select>
+      <span class="filter-count" data-filter-count></span>
+    </div>
+
+    <div class="overflow-auto border border-slate-200 rounded-lg">
+      <table class="matrix w-full">
+        <thead class="bg-slate-50 sticky top-0"><tr><th>From</th><th>Subject</th><th>Format</th><th>Preview</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+        {% for m in pipe.inbox %}
+          {% set ext = (m.path or '')|string %}
+          {% set f = 'unknown' %}
+          {% if '.' in ext.split('/')[-1] %}
+            {% set f = ext.split('/')[-1].split('.')[-1]|lower %}
+          {% endif %}
+          <tr data-filter-row
+              data-vendor="{{ (m.vendor_id or '')|lower }}"
+              data-format="{{ f }}"
+              data-status="{{ m.status }}"
+              data-search="{{ m.vendor_name or '' }} {{ m.vendor_id or '' }} {{ m.subject }} {{ m.path }} {{ m.from_addr }} {{ m.body_preview }}">
+            <td class="align-top">
+              <div class="font-medium">{{ m.vendor_name or m.vendor_id }}</div>
+              <div class="text-slate-500">{{ m.from_addr }}</div>
+            </td>
+            <td class="align-top">{{ m.subject }}</td>
+            <td class="align-top"><span class="chip">{{ f }}</span></td>
+            <td class="align-top max-w-xs truncate" title="{{ m.body_preview }}">{{ m.body_preview }}</td>
+            <td class="align-top">
+              {% if m.status == 'parsed' %}<span class="chip chip-ok">parsed</span>
+              {% elif m.status == 'error' %}<span class="chip chip-bad" title="{{ m.error }}">error</span>
+              {% else %}<span class="chip">new</span>{% endif %}
+            </td>
+            <td class="align-top">
+              {% if m.status != 'parsed' %}
+              <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/parse">
+                <input type="hidden" name="msg_id" value="{{ m.msg_id }}" />
+                <button class="btn-sec text-xs py-1" type="submit" title="Parse this message only">Parse</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
   {% else %}
   <div class="empty-hint">
@@ -245,9 +354,9 @@
     <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/seed" class="inline">
       <button class="underline font-medium" type="submit">Seed stub replies</button>
     </form>
-    from sample vendor files, or upload below.
+    from sample vendor files, or upload above.
     {% if not pipe.dispatch_log %}
-      (Optional: <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=send">Send</a> first for outbox context.)
+      (Optional: <a href="/crew/{{ rfx.rfx_id }}/wizard?step=send">Outbox</a> first for context.)
     {% endif %}
   </div>
   {% endif %}
@@ -259,12 +368,11 @@
     <li>{{ q.vendor_id }} · {{ q.lines|length }} lines · {{ q.questionnaire_answers|length }} answers · {{ q.source_format }}</li>
     {% endfor %}
   </ul>
-  <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">Open Compare →</a>
   {% endif %}
   <div class="flex flex-wrap gap-2">
-    <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send">← Send</a>
+    <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send">← Outbox</a>
     <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/continue">
-      <button class="btn-sec" type="submit">Open Compare →</button>
+      <button class="btn-sec" type="submit" title="Continue to Compare">Open Compare →</button>
     </form>
   </div>
 </section>
@@ -273,25 +381,39 @@
 {# ═══════════════ COMPARE ═══════════════ #}
 {% if step == "compare" %}
 <section class="card space-y-4">
-  <h2 class="font-medium text-lg">Compare</h2>
-  <p class="text-sm text-slate-600">Normalized INR prices, coverage, and knockout questionnaire pass/fail. Only qualified vendors can be awarded.</p>
+  <div class="tip-banner no-print" data-tip-key="compare" role="note">
+    <span class="tip-icon" aria-hidden="true">i</span>
+    <div class="tip-body"><strong>Compare.</strong> Build the INR matrix, use filters to focus Pass/Fail vendors and cell status, then review the questionnaire. Next: <strong>Ask</strong> or go to <strong>Award</strong>.</div>
+    <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
+  </div>
+  <div>
+    <h2 class="font-medium text-lg">Compare</h2>
+    <p class="section-muted">Normalized prices, coverage, and knockout Pass/Fail — only qualified vendors can be awarded.</p>
+  </div>
 
   {% if not pipe.comparison %}
   {% if not pipe.quotes %}
   <div class="empty-hint">
     Generate an RFx and parse inbox first.
-    <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=draft">Draft</a>
+    <a href="/crew/{{ rfx.rfx_id }}/wizard?step=draft">Draft</a>
     ·
-    <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=inbox">Inbox</a>
+    <a href="/crew/{{ rfx.rfx_id }}/wizard?step=inbox">Inbox</a>
   </div>
   {% else %}
   <form method="post" action="/crew/{{ rfx.rfx_id }}/normalize">
-    <button class="btn" type="submit">Build comparison matrix</button>
+    <button class="btn" type="submit" title="Normalize currencies/UOM and build the comparison matrix">Build comparison matrix</button>
   </form>
   {% endif %}
   {% else %}
   {% set cmp = pipe.comparison %}
-  <div class="flex flex-wrap gap-2 mb-2">
+  {% set pass_vids = [] %}
+  {% for q in cmp.qualifications %}
+    {% if q.award_eligible or q.passed %}
+      {% if q.vendor_id not in pass_vids %}{% set _ = pass_vids.append(q.vendor_id) %}{% endif %}
+    {% endif %}
+  {% endfor %}
+
+  <div class="flex flex-wrap gap-2 mb-1">
     {% for q in cmp.qualifications %}
       {% set name = (cmp.vendor_names or {}).get(q.vendor_id, q.vendor_id) %}
       {% if q.award_eligible %}
@@ -302,9 +424,8 @@
     {% endfor %}
   </div>
 
-
   {% if shortlist_pass or shortlist_fail %}
-  <div class="mb-3 space-y-2 no-print">
+  <div class="mb-2 space-y-2 no-print">
     <div class="text-xs font-medium text-slate-600 uppercase tracking-wide">Shortlist (questionnaire Pass)</div>
     <div class="shortlist-strip">
       {% for row in shortlist_pass %}
@@ -330,9 +451,7 @@
   </div>
   {% endif %}
 
-  </details>
-
-  <div class="flex flex-wrap gap-2 text-[11px] mb-2">
+  <div class="flex flex-wrap gap-2 text-[11px] mb-1">
     <span class="status-pill status-ok">ok</span>
     <span class="status-pill status-converted">converted</span>
     <span class="status-pill status-uncertain">uncertain</span>
@@ -341,103 +460,129 @@
     <span class="text-slate-500">Click a cell for FX/UOM notes + evidence.</span>
   </div>
 
-  <div class="overflow-auto max-h-[28rem] border border-slate-200 rounded-lg">
-    <table class="matrix w-full">
-      <thead class="bg-slate-50 sticky top-0">
-        <tr>
-          <th>Line</th>
-          {% for vid in vendors_in_matrix %}
-          <th>
-            {{ (cmp.vendor_names or {}).get(vid, vid) }}
-            {% if vid in (cmp.award_eligible_vendors or cmp.qualified_vendors) %}
-            <span class="chip chip-ok">Q</span>
-            {% else %}
-            <span class="chip chip-bad">XQ</span>
-            {% endif %}
-          </th>
-          {% endfor %}
-        </tr>
-      </thead>
-      <tbody>
-      {% for li in rfx.line_items %}
-        <tr>
-          <td class="text-left max-w-[14rem]">
-            <div class="font-medium">{{ li.line_id }}</div>
-            <div class="text-slate-500 truncate">{{ li.description }}</div>
-          </td>
-          {% for vid in vendors_in_matrix %}
-            {% set cell = cell_map.get((li.line_id, vid)) %}
-            {% set st = (cell.status if cell else 'missing') %}
-            <td class="text-right tabular-nums cell-{{ st }} price-cell {% if vid not in (cmp.award_eligible_vendors or []) %}opacity-40{% endif %}"
-                {% if cell %}
-                hx-get="/crew/{{ rfx.rfx_id }}/evidence?line_id={{ li.line_id }}&vendor_id={{ vid }}"
-                hx-target="#evidence-root"
-                hx-swap="innerHTML"
-                title="Open evidence"
-                {% endif %}>
-              {% if cell %}
-                  {% if cell.unit_price_inr is not none %}
-                    ₹{{ '%.2f'|format(cell.unit_price_inr) }}
-                  {% else %}
-                    <span class="text-slate-400">—</span>
-                  {% endif %}
-                  <div><span class="status-pill status-{{ st }}">{{ st }}</span></div>
-              {% else %}
-                <span class="status-pill status-missing">missing</span>
-              {% endif %}
-            </td>
-          {% endfor %}
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  <div data-compare-filters class="space-y-2">
+    <div class="filter-bar no-print">
+      <input type="search" data-filter-search placeholder="Search lines…" title="Filter by line id or description" aria-label="Search lines" />
+      <select data-filter-vendor-vis title="Show Pass and/or Fail vendor columns" aria-label="Vendor visibility">
+        <option value="all">All vendors</option>
+        <option value="pass">Pass only</option>
+        <option value="fail">Fail only</option>
+      </select>
+      <select data-filter-cell-status title="Highlight / keep rows with this cell status" aria-label="Cell status">
+        <option value="all">All cell status</option>
+        <option value="ok">ok</option>
+        <option value="converted">converted</option>
+        <option value="uncertain">uncertain</option>
+        <option value="uom_mismatch">uom_mismatch</option>
+        <option value="missing">missing</option>
+      </select>
+      <span class="tip-q" tabindex="0" role="img" aria-label="Tip: Pass/Fail hides columns; cell status dims non-matching cells" data-tip="Pass/Fail hides vendor columns (price + questionnaire). Cell status dims non-matching price cells and can hide rows with no match.">?</span>
+      <span class="filter-count" data-filter-count></span>
+    </div>
 
-
-  {% if q_matrix %}
-  <div class="mt-4 mb-2">
-    <h3 class="font-medium text-sm mb-1">Questionnaire comparison ({{ q_matrix|length }} questions × vendors)</h3>
-    <p class="text-xs text-slate-500 mb-2">Questions × vendors. KO badge = knockout gate. Cells = Pass / Fail / Unanswered + answer text.</p>
-    <div class="overflow-auto max-h-[22rem] border border-slate-200 rounded-lg">
-      <table class="matrix w-full">
+    <div class="overflow-auto max-h-[28rem] border border-slate-200 rounded-lg">
+      <table class="matrix w-full" data-price-matrix>
         <thead class="bg-slate-50 sticky top-0">
           <tr>
-            <th class="text-left">Question</th>
-            {% set _vids = q_matrix[0].by_vendor.keys() if q_matrix else [] %}
-            {% for vid in _vids %}
-            <th>{{ q_matrix[0].by_vendor[vid].vendor_name or vid }}</th>
+            <th>Line</th>
+            {% for vid in vendors_in_matrix %}
+            {% set is_pass = vid in (cmp.award_eligible_vendors or cmp.qualified_vendors or pass_vids) %}
+            <th data-vendor="{{ vid }}" data-pass="{{ '1' if is_pass else '0' }}">
+              {{ (cmp.vendor_names or {}).get(vid, vid) }}
+              {% if is_pass %}
+              <span class="chip chip-ok">Q</span>
+              {% else %}
+              <span class="chip chip-bad">XQ</span>
+              {% endif %}
+            </th>
             {% endfor %}
           </tr>
         </thead>
         <tbody>
-        {% for row in q_matrix %}
-          <tr>
-            <td class="text-left max-w-[16rem]">
-              <div class="font-medium flex items-center gap-1 flex-wrap">
-                {{ row.question_id }}
-                {% if row.knockout %}<span class="ko-badge">KO</span>{% endif %}
-              </div>
-              <div class="text-slate-500 text-[11px] leading-snug">{{ row.question }}</div>
+        {% for li in rfx.line_items %}
+          <tr data-filter-row data-search="{{ li.line_id }} {{ li.description }}">
+            <td class="text-left max-w-[14rem]">
+              <div class="font-medium">{{ li.line_id }}</div>
+              <div class="text-slate-500 truncate">{{ li.description }}</div>
             </td>
-            {% for vid, cell in row.by_vendor.items() %}
-            <td class="q-cell q-{{ cell.status }}">
-              <span class="status-pill status-{{ 'ok' if cell.status == 'pass' else ('missing' if cell.status == 'unanswered' else 'uncertain') }}">
-                {% if cell.status == 'pass' %}Pass{% elif cell.status == 'fail' %}Fail{% else %}Unanswered{% endif %}
-              </span>
-              <span class="ans" title="{{ cell.answer or '' }}">{% if cell.answer %}{{ cell.answer }}{% else %}—{% endif %}</span>
-            </td>
+            {% for vid in vendors_in_matrix %}
+              {% set cell = cell_map.get((li.line_id, vid)) %}
+              {% set st = (cell.status if cell else 'missing') %}
+              {% set is_pass = vid in (cmp.award_eligible_vendors or cmp.qualified_vendors or pass_vids) %}
+              <td data-vendor="{{ vid }}" data-status="{{ st }}" data-pass="{{ '1' if is_pass else '0' }}"
+                  class="text-right tabular-nums cell-{{ st }} price-cell {% if not is_pass %}opacity-40{% endif %}"
+                  {% if cell %}
+                  hx-get="/crew/{{ rfx.rfx_id }}/evidence?line_id={{ li.line_id }}&vendor_id={{ vid }}"
+                  hx-target="#evidence-root"
+                  hx-swap="innerHTML"
+                  title="Open evidence"
+                  {% endif %}>
+                {% if cell %}
+                    {% if cell.unit_price_inr is not none %}
+                      ₹{{ '%.2f'|format(cell.unit_price_inr) }}
+                    {% else %}
+                      <span class="text-slate-400">—</span>
+                    {% endif %}
+                    <div><span class="status-pill status-{{ st }}">{{ st }}</span></div>
+                {% else %}
+                  <span class="status-pill status-missing">missing</span>
+                {% endif %}
+              </td>
             {% endfor %}
           </tr>
         {% endfor %}
         </tbody>
       </table>
     </div>
+
+    {% if q_matrix %}
+    <div class="mt-3">
+      <h3 class="font-medium text-sm mb-1">Questionnaire comparison ({{ q_matrix|length }} questions × vendors)
+        <span class="tip-q" tabindex="0" role="img" aria-label="Tip: single questionnaire matrix; KO means knockout gate" data-tip="Single questionnaire matrix. KO = knockout gate. Vendor filter above also applies here.">?</span>
+      </h3>
+      <p class="text-xs text-slate-500 mb-2">KO badge = knockout gate. Cells = Pass / Fail / Unanswered.</p>
+      <div class="overflow-auto max-h-[22rem] border border-slate-200 rounded-lg">
+        <table class="matrix w-full" data-q-matrix>
+          <thead class="bg-slate-50 sticky top-0">
+            <tr>
+              <th class="text-left">Question</th>
+              {% set _vids = q_matrix[0].by_vendor.keys() if q_matrix else [] %}
+              {% for vid in _vids %}
+              {% set is_pass = vid in (cmp.award_eligible_vendors or cmp.qualified_vendors or pass_vids) %}
+              <th data-vendor="{{ vid }}" data-pass="{{ '1' if is_pass else '0' }}">{{ q_matrix[0].by_vendor[vid].vendor_name or vid }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+          {% for row in q_matrix %}
+            <tr>
+              <td class="text-left max-w-[16rem]">
+                <div class="font-medium flex items-center gap-1 flex-wrap">
+                  {{ row.question_id }}
+                  {% if row.knockout %}<span class="ko-badge">KO</span>{% endif %}
+                </div>
+                <div class="text-slate-500 text-[11px] leading-snug">{{ row.question }}</div>
+              </td>
+              {% for vid, cell in row.by_vendor.items() %}
+              <td class="q-cell q-{{ cell.status }}" data-vendor="{{ vid }}">
+                <span class="status-pill status-{{ 'ok' if cell.status == 'pass' else ('missing' if cell.status == 'unanswered' else 'uncertain') }}">
+                  {% if cell.status == 'pass' %}Pass{% elif cell.status == 'fail' %}Fail{% else %}Unanswered{% endif %}
+                </span>
+                <span class="ans" title="{{ cell.answer or '' }}">{% if cell.answer %}{{ cell.answer }}{% else %}—{% endif %}</span>
+              </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
   </div>
-  {% endif %}
 
   {% if cmp.vendor_flags %}
   <details class="text-sm">
-    <summary class="cursor-pointer font-medium">Vendor FX / UOM / coverage notes</summary>
+    <summary class="cursor-pointer font-medium text-slate-600">Vendor FX / UOM / coverage notes</summary>
     <ul class="mt-2 text-xs text-slate-600 space-y-1">
       {% for vid, flags in cmp.vendor_flags.items() %}
         {% if flags %}<li><strong>{{ (cmp.vendor_names or {}).get(vid, vid) }}:</strong> {{ flags|join('; ') }}</li>{% endif %}
@@ -445,13 +590,12 @@
     </ul>
   </details>
   {% endif %}
-
-  <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=ask">Open Ask →</a>
   {% endif %}
+
   <div class="flex flex-wrap gap-2">
     <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=inbox">← Inbox</a>
     <form method="post" action="/crew/{{ rfx.rfx_id }}/compare/continue">
-      <button class="btn-sec" type="submit">Open Ask →</button>
+      <button class="btn-sec" type="submit" title="Continue to Ask Analyst">Open Ask →</button>
     </form>
   </div>
 </section>
@@ -460,13 +604,18 @@
 {# ═══════════════ ASK ═══════════════ #}
 {% if step == "ask" %}
 <section class="card space-y-4">
+  <div class="tip-banner no-print" data-tip-key="ask" role="note">
+    <span class="tip-icon" aria-hidden="true">i</span>
+    <div class="tip-body"><strong>Ask.</strong> Use a premade chip (VP / hard cases) or type a free-text question. History persists. Next: <strong>Award</strong> to assign vendors.</div>
+    <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
+  </div>
   <div class="flex items-start justify-between gap-3">
     <div>
       <h2 class="font-medium text-lg">Ask Analyst</h2>
-      <p class="text-sm text-slate-600">Persistent live chat. History stays across questions.</p>
+      <p class="section-muted">Live chat grounded on the comparison matrix.</p>
     </div>
     <form method="post" action="/crew/{{ rfx.rfx_id }}/ask/continue">
-      <button class="btn-sec" type="submit">Open Award →</button>
+      <button class="btn-sec" type="submit" title="Continue to Award">Open Award →</button>
     </form>
   </div>
 
@@ -489,7 +638,7 @@
       {% if not pipe.comparison %}
       <div class="empty-hint">
         Build a comparison matrix first for grounded answers.
-        <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">Compare</a>
+        <a href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">Compare</a>
         (or ask anyway — Analyst will note missing data).
       </div>
       {% else %}
@@ -498,7 +647,9 @@
     {% endif %}
   </div>
 
-  <div class="mb-1 text-xs font-medium text-slate-500 uppercase tracking-wide">Premade — assignment VP &amp; hard cases</div>
+  <div class="mb-1 text-xs font-medium text-slate-500 uppercase tracking-wide">Premade — assignment VP &amp; hard cases
+    <span class="tip-q" tabindex="0" role="img" aria-label="Tip: click a chip to fill the question box" data-tip="Click a chip to fill the question box, then Ask.">?</span>
+  </div>
   <div class="flex flex-wrap gap-2 mb-3">
     {% for s in suggested_questions %}
     <button type="button" class="chip chip-info hover:ring-1 hover:ring-indigo-300 text-left"
@@ -512,7 +663,7 @@
         class="flex gap-2" onsubmit="setTimeout(()=>this.reset(), 50)">
     <input id="ask-q" name="question" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
            placeholder="e.g. cheapest per line among qualified vendors?" required autocomplete="off" />
-    <button class="btn" type="submit">Ask</button>
+    <button class="btn" type="submit" title="Send question to Analyst">Ask</button>
   </form>
   <div class="flex flex-wrap gap-2">
     <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">← Compare</a>
@@ -524,6 +675,11 @@
 {# ═══════════════ AWARD ═══════════════ #}
 {% if step == "award" %}
 <section class="card space-y-4">
+  <div class="tip-banner no-print" data-tip-key="award" role="note">
+    <span class="tip-icon" aria-hidden="true">i</span>
+    <div class="tip-body"><strong>Award.</strong> Assign Pass vendors normally, or <em>Request partial award</em> for a Fail vendor (needs manager approval). Suggest cheapest / Export Excel / Freeze still apply. Next: <strong>Audit</strong>.</div>
+    <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
+  </div>
   <div class="flex flex-wrap items-start justify-between gap-3">
     <div>
       <h2 class="font-medium text-lg">Award
@@ -531,20 +687,18 @@
         <span class="chip chip-ok align-middle ml-1" title="Frozen at {{ freeze.timestamp }}">Frozen · {{ freeze.freeze_id }}</span>
         {% endif %}
       </h2>
-      <p class="text-sm text-slate-600">Pick a qualified vendor with a price for each line. Dropdowns are filtered to award-eligible vendors.{% if is_frozen %} <span class="text-indigo-700 font-medium">Frozen — unfreeze to edit.</span>{% endif %}</p>
+      <p class="section-muted">Pick a qualified, priced vendor per line.{% if is_frozen %} <span class="text-indigo-700 font-medium">Frozen — unfreeze to edit.</span>{% endif %}</p>
     </div>
     <div class="flex flex-wrap gap-2 no-print">
       {% if not is_frozen %}
       <form method="post" action="/crew/{{ rfx.rfx_id }}/award/suggest">
-        <button class="btn-sec" type="submit">Suggest cheapest split</button>
+        <button class="btn-sec" type="submit" title="Auto-assign cheapest award-eligible vendor per line">Suggest cheapest split</button>
       </form>
       {% endif %}
-      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/export.xlsx">Export Excel</a>
+      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/export.xlsx" title="Download award workbook">Export Excel</a>
     </div>
   </div>
 
-
-  {# Sad path: single dialogue when no vendor is award-eligible #}
   {% set sad_path = pipe.comparison and (not shortlist_pass) %}
   {% if sad_path %}
   <div id="sad-award-dialog" class="sad-dialog-backdrop no-print" role="dialog" aria-modal="true" aria-labelledby="sad-award-title">
@@ -593,7 +747,7 @@
   {% endif %}
 
   {% if shortlist_pass or shortlist_fail %}
-  <div class="mb-3 space-y-2 no-print">
+  <div class="mb-2 space-y-2 no-print">
     <div class="text-xs font-medium text-slate-600 uppercase tracking-wide">Shortlist (questionnaire Pass)</div>
     <div class="shortlist-strip">
       {% for row in shortlist_pass %}
@@ -622,74 +776,227 @@
   {% if not pipe.comparison %}
   <div class="empty-hint">
     Generate an RFx and parse inbox, then build Compare first.
-    <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=draft">Draft</a>
+    <a href="/crew/{{ rfx.rfx_id }}/wizard?step=draft">Draft</a>
     ·
-    <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=inbox">Inbox</a>
+    <a href="/crew/{{ rfx.rfx_id }}/wizard?step=inbox">Inbox</a>
     ·
-    <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">Compare</a>
+    <a href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">Compare</a>
   </div>
   {% else %}
 
-  <form method="post" action="/crew/{{ rfx.rfx_id }}/award/save" class="space-y-3">
-    <div class="overflow-auto max-h-[28rem] border border-slate-200 rounded-lg">
-      <table class="matrix w-full">
-        <thead class="bg-slate-50 sticky top-0"><tr><th>Line</th><th>Qty</th><th>Award to</th><th>₹/pc</th></tr></thead>
-        <tbody>
-        {% for li in rfx.line_items %}
-          {% set elig = eligible_by_line.get(li.line_id, []) %}
-          {% set current = pipe.awards.get(li.line_id, '') %}
-          <tr>
-            <td class="text-left max-w-[16rem]">
-              <div class="font-medium">{{ li.line_id }}</div>
-              <div class="text-slate-500 truncate">{{ li.description }}</div>
-            </td>
-            <td class="text-right tabular-nums">{{ li.qty }}</td>
-            <td>
-              <select name="award_{{ li.line_id }}" class="w-full rounded border border-slate-300 text-xs px-2 py-1"
-                      {% if is_frozen %}disabled{% endif %}>
-                <option value="">— none —</option>
-                {% for e in elig %}
-                <option value="{{ e.vendor_id }}" {% if e.vendor_id == current %}selected{% endif %}>
-                  {{ e.name }} — ₹{{ '%.2f'|format(e.unit_price_inr) }}
-                </option>
-                {% endfor %}
-              </select>
-              {% if not elig %}
-              <div class="text-[10px] text-rose-600 mt-0.5">
-                {% set gap_reasons = eligibility_reasons_by_line.get(li.line_id, []) if eligibility_reasons_by_line else [] %}
-                {% if gap_reasons %}
-                  {{ gap_reasons|join(' · ') }}
-                {% else %}
-                  No qualified priced vendor
+  <div class="space-y-3">
+    <form id="award-save-form" method="post" action="/crew/{{ rfx.rfx_id }}/award/save" class="hidden" aria-hidden="true"></form>
+    <div data-filter-root class="space-y-2">
+      <div class="filter-bar no-print">
+        <input type="search" data-filter-search placeholder="Search lines…" title="Filter by line id or description" aria-label="Search award lines" />
+        <select data-filter-assign title="Show assigned or unassigned lines" aria-label="Assignment">
+          <option value="all">All assignment</option>
+          <option value="assigned">Assigned</option>
+          <option value="unassigned">Unassigned</option>
+        </select>
+        <select data-filter-vendor title="Show only lines awarded to this vendor" aria-label="Awarded vendor">
+          <option value="all">All vendors</option>
+          {% for v in rfx.vendors %}
+          <option value="{{ v.vendor_id|lower }}">{{ v.vendor_id }} — {{ v.name }}</option>
+          {% endfor %}
+        </select>
+        <span class="tip-q" tabindex="0" role="img" aria-label="Tip: vendor filter shows lines awarded to that vendor" data-tip="Vendor filter keeps rows currently awarded to that vendor (unassigned rows hide when a vendor is selected).">?</span>
+        <span class="filter-count" data-filter-count></span>
+      </div>
+
+      <div class="overflow-auto max-h-[28rem] border border-slate-200 rounded-lg">
+        <table class="matrix w-full">
+          <thead class="bg-slate-50 sticky top-0"><tr><th>Line</th><th>Qty</th><th>Award to</th><th>₹/pc</th></tr></thead>
+          <tbody>
+          {% for li in rfx.line_items %}
+            {% set elig = eligible_by_line.get(li.line_id, []) %}
+            {% set current = pipe.awards.get(li.line_id, '') %}
+            {% set partials = partial_by_line.get(li.line_id, []) if partial_by_line else [] %}
+            {% set pst = partial_status_by_line.get(li.line_id) if partial_status_by_line else none %}
+            {% set is_pending = pst and pst.status == 'pending' %}
+            {% set is_partial_approved = pst and pst.status == 'approved' and current == pst.vendor_id %}
+            <tr data-filter-row
+                data-search="{{ li.line_id }} {{ li.description }}"
+                data-assign="{{ 'assigned' if current else 'unassigned' }}"
+                data-vendor="{{ (current or (pst.vendor_id if is_pending else '') or '')|lower }}"
+                data-status="{{ 'assigned' if current else 'unassigned' }}">
+              <td class="text-left max-w-[16rem]">
+                <div class="font-medium">{{ li.line_id }}</div>
+                <div class="text-slate-500 truncate">{{ li.description }}</div>
+                {% if is_pending %}
+                <span class="chip chip-warn mt-1" title="Provisional — not counted in freeze until approved">Pending manager approval</span>
+                {% elif is_partial_approved %}
+                <span class="chip chip-ok mt-1" title="Manager approved partial award">Approved (partial)</span>
+                {% elif pst and pst.status == 'rejected' %}
+                <span class="chip chip-bad mt-1" title="{{ pst.manager_comment or '' }}">Rejected (partial)</span>
                 {% endif %}
-              </div>
-              {% endif %}
-            </td>
-            <td class="text-right tabular-nums text-slate-500">
-              {% for e in elig %}{% if e.vendor_id == current %}₹{{ '%.2f'|format(e.unit_price_inr) }}{% endif %}{% endfor %}
-            </td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
+              </td>
+              <td class="text-right tabular-nums">{{ li.qty }}</td>
+              <td>
+                <select name="award_{{ li.line_id }}" form="award-save-form" class="w-full rounded border border-slate-300 text-xs px-2 py-1"
+                        {% if is_frozen or is_pending %}disabled{% endif %}
+                        title="Award-eligible (Pass) vendors with a usable price">
+                  <option value="">— none —</option>
+                  {% for e in elig %}
+                  <option value="{{ e.vendor_id }}" {% if e.vendor_id == current %}selected{% endif %}>
+                    {{ e.name }} — ₹{{ '%.2f'|format(e.unit_price_inr) }}
+                  </option>
+                  {% endfor %}
+                  {% if is_partial_approved %}
+                  <option value="{{ pst.vendor_id }}" selected>
+                    {{ pst.vendor_name or pst.vendor_id }} — ₹{{ '%.2f'|format(pst.unit_price_inr or 0) }} (partial ✓)
+                  </option>
+                  {% endif %}
+                </select>
+                {% if is_pending %}
+                <div class="text-[10px] text-amber-800 mt-0.5">
+                  Requested: {{ pst.vendor_name or pst.vendor_id }}
+                  {% if pst.unit_price_inr is not none %} · ₹{{ '%.2f'|format(pst.unit_price_inr) }}{% endif %}
+                  — awaiting manager
+                </div>
+                {% elif not elig and not is_partial_approved %}
+                <div class="text-[10px] text-rose-600 mt-0.5">
+                  {% set gap_reasons = eligibility_reasons_by_line.get(li.line_id, []) if eligibility_reasons_by_line else [] %}
+                  {% if gap_reasons %}
+                    {{ gap_reasons|join(' · ') }}
+                  {% else %}
+                    No qualified priced vendor
+                  {% endif %}
+                </div>
+                {% endif %}
+
+                {% if not is_frozen and not is_pending and partials %}
+                <details class="mt-1.5 text-xs border border-amber-200 rounded-md bg-amber-50/60 px-2 py-1.5">
+                  <summary class="cursor-pointer font-medium text-amber-950">
+                    Request partial award
+                    <span class="tip-q" tabindex="0" role="img" aria-label="Tip: for vendors who failed knockouts but have a price" data-tip="Use when a Fail / incomplete vendor has a price you still want — manager must approve before freeze.">?</span>
+                  </summary>
+                  <form method="post" action="/crew/{{ rfx.rfx_id }}/award/partial/request" class="mt-2 space-y-1.5">
+                    <input type="hidden" name="line_id" value="{{ li.line_id }}" />
+                    <label class="block text-[10px] text-slate-600">Vendor (not fully eligible)
+                      <select name="vendor_id" class="mt-0.5 w-full rounded border border-slate-300 text-xs px-2 py-1" required
+                              onchange="(function(s){var o=s.options[s.selectedIndex]; var g=document.getElementById('gaps-{{ li.line_id }}'); if(g) g.textContent=o.getAttribute('data-gaps')||'';})(this)">
+                        <option value="">— select —</option>
+                        {% for p in partials %}
+                        <option value="{{ p.vendor_id }}" data-gaps="{{ (p.gaps or [])|join(' · ') }}">
+                          {{ p.name }} — ₹{{ '%.2f'|format(p.unit_price_inr) }}
+                        </option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                    <div id="gaps-{{ li.line_id }}" class="text-[10px] text-amber-900/90 leading-snug"></div>
+                    <label class="block text-[10px] text-slate-600">Buyer justification
+                      <textarea name="buyer_note" rows="2" required minlength="8"
+                                class="mt-0.5 w-full rounded border border-slate-300 text-xs px-2 py-1"
+                                placeholder="Why award despite gaps? (required)"></textarea>
+                    </label>
+                    <button class="btn-sec text-xs py-1" type="submit" title="Submit for manager approval — does not freeze yet">Submit for approval</button>
+                  </form>
+                </details>
+                {% endif %}
+              </td>
+              <td class="text-right tabular-nums text-slate-500">
+                {% if is_pending and pst.unit_price_inr is not none %}
+                  ₹{{ '%.2f'|format(pst.unit_price_inr) }}
+                {% elif is_partial_approved and pst.unit_price_inr is not none %}
+                  ₹{{ '%.2f'|format(pst.unit_price_inr) }}
+                {% else %}
+                  {% for e in elig %}{% if e.vendor_id == current %}₹{{ '%.2f'|format(e.unit_price_inr) }}{% endif %}{% endfor %}
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
     {% if not is_frozen %}
-    <button class="btn" type="submit">Save award decisions</button>
+    <button class="btn" type="submit" form="award-save-form" title="Persist per-line award decisions">Save award decisions</button>
     {% else %}
     <p class="text-xs text-slate-500">Dropdowns are read-only while frozen.</p>
     {% endif %}
-  </form>
+  </div>
+
+  {# Manager approval (stub demo roles) #}
+  <div class="rounded-lg border border-slate-200 bg-white p-4 space-y-3 no-print">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div>
+        <div class="font-medium text-sm">Manager approval
+          <span class="tip-q" tabindex="0" role="img" aria-label="Tip: stub role — Approve/Reject as manager" data-tip="Demo stub: no SSO. Buyer requests partial awards; use Approve/Reject here as manager. Pending items block Freeze.">?</span>
+        </div>
+        <p class="text-xs text-slate-500">Partial awards for non-Pass vendors stay provisional until approved.</p>
+      </div>
+      <span class="chip {% if pending_partials %}chip-warn{% else %}chip{% endif %}">{{ pending_partials|length if pending_partials else 0 }} pending</span>
+    </div>
+
+    {% if pending_partials %}
+    <ul class="space-y-3">
+      {% for req in pending_partials %}
+      <li class="rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-sm">
+        <div class="flex flex-wrap gap-2 items-baseline">
+          <span class="chip chip-warn">Pending</span>
+          <strong>{{ req.line_id }}</strong>
+          <span>→ {{ req.vendor_name or req.vendor_id }}</span>
+          {% if req.unit_price_inr is not none %}
+          <span class="tabular-nums text-slate-600">₹{{ '%.2f'|format(req.unit_price_inr) }}</span>
+          {% endif %}
+          <span class="text-xs text-slate-400">{{ req.request_id }}</span>
+        </div>
+        {% if req.gaps %}
+        <div class="mt-1 text-xs text-amber-950"><span class="font-medium">Gaps:</span> {{ req.gaps|join(' · ') }}</div>
+        {% endif %}
+        <div class="mt-1 text-xs text-slate-700"><span class="font-medium">Buyer note:</span> {{ req.buyer_note }}</div>
+        <div class="text-[10px] text-slate-400 mt-0.5">Requested {{ req.requested_at[:19].replace('T',' ') if req.requested_at else '' }} UTC</div>
+        <div class="mt-2 flex flex-wrap gap-2 items-end">
+          <form method="post" action="/crew/{{ rfx.rfx_id }}/award/partial/approve" class="flex flex-wrap gap-2 items-end">
+            <input type="hidden" name="request_id" value="{{ req.request_id }}" />
+            <label class="text-[10px] text-slate-600">Manager comment (optional)
+              <input name="manager_comment" class="mt-0.5 block rounded border border-slate-300 px-2 py-1 text-xs min-w-[12rem]" placeholder="e.g. accept with CAPA" />
+            </label>
+            <button class="btn text-xs py-1" type="submit" title="Act as manager — approve into firm awards">Approve</button>
+          </form>
+          <form method="post" action="/crew/{{ rfx.rfx_id }}/award/partial/reject" class="flex flex-wrap gap-2 items-end">
+            <input type="hidden" name="request_id" value="{{ req.request_id }}" />
+            <label class="text-[10px] text-slate-600">Reject reason (optional)
+              <input name="manager_comment" class="mt-0.5 block rounded border border-slate-300 px-2 py-1 text-xs min-w-[12rem]" placeholder="e.g. KO non-negotiable" />
+            </label>
+            <button class="btn-sec text-xs py-1" type="submit" title="Act as manager — reject request">Reject</button>
+          </form>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-xs text-slate-500">No pending partial-award requests. Use <em>Request partial award</em> on a line when a Fail vendor still has a price.</p>
+    {% endif %}
+
+    {% if all_partials %}
+    <details class="text-xs">
+      <summary class="cursor-pointer text-slate-600">All partial requests ({{ all_partials|length }})</summary>
+      <ul class="mt-2 space-y-1 text-slate-600">
+        {% for req in all_partials|reverse %}
+        <li>
+          <span class="chip {% if req.status == 'approved' %}chip-ok{% elif req.status == 'rejected' %}chip-bad{% else %}chip-warn{% endif %}">{{ req.status }}</span>
+          {{ req.line_id }} → {{ req.vendor_id }} · {{ req.request_id }}
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </div>
 
   {% if pipe.awards %}
   <div class="rounded-lg border border-indigo-200 bg-white p-4 space-y-2 no-print">
-    <div class="font-medium text-sm">Freeze award (assignment trust)</div>
-    <p class="text-xs text-slate-600">Snapshots awards, totals, Pass shortlist, and comparison version. While frozen, line awards cannot change until you Unfreeze (logged).</p>
+    <div class="font-medium text-sm">Freeze award
+      <span class="tip-q" tabindex="0" role="img" aria-label="Tip: freeze locks line awards until unfreeze" data-tip="Freeze snapshots awards + totals. Line awards lock until Unfreeze (logged in Audit).">?</span>
+    </div>
+    <p class="text-xs text-slate-500">Locks firm awards until Unfreeze. Blocked while any partial request is pending.</p>
     {% if not is_frozen %}
     <form method="post" action="/crew/{{ rfx.rfx_id }}/award/freeze" class="flex flex-wrap items-end gap-2">
       <label class="text-xs text-slate-600">Note (optional)
         <input name="note" class="mt-0.5 block rounded border border-slate-300 px-2 py-1 text-xs min-w-[14rem]" placeholder="e.g. VP-ready split" />
       </label>
-      <button class="btn" type="submit">Freeze award</button>
+      <button class="btn" type="submit" title="Freeze current award snapshot">Freeze award</button>
     </form>
     {% else %}
     <div class="flex flex-wrap items-center gap-2 text-sm">
@@ -700,7 +1007,7 @@
       <label class="text-xs text-slate-600">Unfreeze note (optional)
         <input name="note" class="mt-0.5 block rounded border border-slate-300 px-2 py-1 text-xs min-w-[14rem]" placeholder="reason for reopen" />
       </label>
-      <button class="btn-sec" type="submit">Unfreeze</button>
+      <button class="btn-sec" type="submit" title="Unlock awards for editing">Unfreeze</button>
     </form>
     {% endif %}
   </div>
@@ -733,10 +1040,10 @@
   {% if pipe.awards %}
   <div class="rounded-lg border border-slate-200 bg-white p-4 space-y-2 no-print">
     <div class="font-medium text-sm">Notify awarded vendors (stub)</div>
-    <p class="text-xs text-slate-600">Writes plaintext <code>award_notice_&lt;vendor&gt;_&lt;rfx&gt;.txt</code> into <code>data/outbox/</code>. No SMTP.</p>
+    <p class="text-xs text-slate-500">Writes <code>award_notice_*.txt</code> into <code>data/outbox/</code>. No SMTP.</p>
     <form method="post" action="/crew/{{ rfx.rfx_id }}/award/notify" class="flex flex-wrap items-center gap-2">
-      <button class="btn" type="submit">Send award notices (stub)</button>
-      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send">Open outbox on Send →</a>
+      <button class="btn" type="submit" title="Stub-write award notices to outbox">Send award notices (stub)</button>
+      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send">Open Outbox →</a>
     </form>
     {% if award_notice_paths %}
     <div class="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
@@ -746,23 +1053,30 @@
         <li><code>{{ p }}</code></li>
         {% endfor %}
       </ul>
-      <a class="underline text-xs" href="/crew/{{ rfx.rfx_id }}/wizard?step=send">View on Send tab outbox list</a>
+      <a class="underline text-xs" href="/crew/{{ rfx.rfx_id }}/wizard?step=send">View on Outbox tab</a>
     </div>
     {% endif %}
   </div>
   {% endif %}
 
-  <a class="btn-sec no-print" href="/crew/{{ rfx.rfx_id }}/wizard?step=ask">← Ask</a>
-  <a class="btn-sec no-print" href="/crew/{{ rfx.rfx_id }}/wizard?step=audit">Open Audit →</a>
+  <div class="flex flex-wrap gap-2 no-print">
+    <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=ask">← Ask</a>
+    <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=audit">Open Audit →</a>
+  </div>
 </section>
 {% endif %}
 
 {# ═══════════════ AUDIT ═══════════════ #}
 {% if step == "audit" %}
 <section class="card space-y-4">
+  <div class="tip-banner no-print" data-tip-key="audit" role="note">
+    <span class="tip-icon" aria-hidden="true">i</span>
+    <div class="tip-body"><strong>Audit.</strong> Append-only log of award saves, freeze/unfreeze, stub notices, and Compare cell overrides. Read-only — use Award to change decisions.</div>
+    <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
+  </div>
   <div>
     <h2 class="font-medium text-lg">Audit log</h2>
-    <p class="text-sm text-slate-600">Append-only history of award saves, freeze/unfreeze, stub notices, and cell overrides. Kept separate from Award so the decision screen stays clean.</p>
+    <p class="section-muted">History of award / freeze / notice / override actions.</p>
   </div>
 
   {% if review_log %}
