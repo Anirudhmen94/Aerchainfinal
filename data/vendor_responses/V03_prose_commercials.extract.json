@@ -1,0 +1,297 @@
+{
+  "vendor_id": "V03",
+  "vendor_name": "PacificBoard Inc",
+  "currency": "USD",
+  "source_format": "docx",
+  "notes": "USD vendor. Commercials buried in prose as USD per 1000 pieces. Freight extra. L28 is per kg.",
+  "confidence": 0.85,
+  "lines": [
+    {
+      "line_id": "L01",
+      "description": "3-ply RSC carton 300x200x150 mm",
+      "unit_price": 215.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L02",
+      "description": "3-ply RSC carton 400x300x200 mm",
+      "unit_price": 305.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L03",
+      "description": "3-ply RSC carton 500x400x300 mm",
+      "unit_price": 440.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L04",
+      "description": "5-ply RSC carton 300x200x150 mm",
+      "unit_price": 330.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L05",
+      "description": "5-ply RSC carton 400x300x200 mm",
+      "unit_price": 475.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L06",
+      "description": "5-ply RSC carton 500x400x300 mm",
+      "unit_price": 650.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L07",
+      "description": "7-ply heavy RSC 600x500x400 mm",
+      "unit_price": 1380.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L08",
+      "description": "7-ply heavy RSC 800x600x500 mm",
+      "unit_price": 2010.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L09",
+      "description": "3-ply die-cut mailer 250x200x50 mm",
+      "unit_price": 160.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L10",
+      "description": "5-ply die-cut mailer 350x250x80 mm",
+      "unit_price": 248.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L11",
+      "description": "Corrugated pallet tray 1200x800 mm",
+      "unit_price": 980.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L12",
+      "description": "Corner guard L-profile 600 mm",
+      "unit_price": 48.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L13",
+      "description": "Corner guard L-profile 900 mm",
+      "unit_price": 66.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L14",
+      "description": "3-ply corrugated sheet 1200x800 mm",
+      "unit_price": 132.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L15",
+      "description": "5-ply corrugated sheet 1200x800 mm",
+      "unit_price": 198.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L16",
+      "description": "Corrugated tube OD50 x 300 mm",
+      "unit_price": 98.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L17",
+      "description": "Corrugated tube OD75 x 300 mm",
+      "unit_price": 150.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L18",
+      "description": "6-cell partition insert 3-ply",
+      "unit_price": 1100.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L19",
+      "description": "12-cell partition insert 3-ply",
+      "unit_price": 1620.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L20",
+      "description": "24-cell partition insert 5-ply",
+      "unit_price": 2420.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L21",
+      "description": "Telescopic outer 400x300x200 3-ply",
+      "unit_price": 750.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L22",
+      "description": "Telescopic inner 400x300x200 3-ply",
+      "unit_price": 690.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L23",
+      "description": "Archive box 400x300x250 3-ply",
+      "unit_price": 600.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L24",
+      "description": "Archive box 400x300x250 5-ply",
+      "unit_price": 830.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L25",
+      "description": "Kraft paper tape 48mm x 100m",
+      "unit_price": 440.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L26",
+      "description": "Bubble wrap 1.2m x 50m",
+      "unit_price": 4850.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L27",
+      "description": "PE foam sheet 5mm 1200x800",
+      "unit_price": 405.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L28",
+      "description": "PP strapping band 12mm",
+      "unit_price": 2.2,
+      "uom": "kg",
+      "currency": "USD",
+      "notes": "Weight basis \u2014 UOM mismatch vs piece"
+    },
+    {
+      "line_id": "L29",
+      "description": "Shrink film 500mm x 300m",
+      "unit_price": 9900.0,
+      "uom": "per 1000",
+      "currency": "USD",
+      "notes": "USD vendor \u2014 convert FX + divide by 1000"
+    },
+    {
+      "line_id": "L30",
+      "description": "Wooden pallet 1200x800 EUR",
+      "unit_price": 7.4,
+      "uom": "ea",
+      "currency": "USD",
+      "notes": "Quoted each, not per 1000"
+    }
+  ],
+  "questionnaire_answers": [
+    {
+      "id": "Q1",
+      "question": "Is the manufacturing site currently ISO 9001 certified?",
+      "answer": "Yes (site PB-CHN-02)"
+    },
+    {
+      "id": "Q2",
+      "question": "Standard manufacturing lead time (calendar days) for this basket?",
+      "answer": "16"
+    },
+    {
+      "id": "Q3",
+      "question": "Can you support VMI / consignment for top 10 SKUs?",
+      "answer": "Yes for top 8 SKUs after 3 months"
+    },
+    {
+      "id": "Q4",
+      "question": "Minimum order quantity per SKU?",
+      "answer": "750 ea"
+    },
+    {
+      "id": "Q5",
+      "question": "Can you supply FSC-certified board on request?",
+      "answer": "Available, +5%"
+    },
+    {
+      "id": "Q6",
+      "question": "Defect / rejection rate over the last 12 months (%)?",
+      "answer": "0.55"
+    },
+    {
+      "id": "Q7",
+      "question": "Do you accept returns for verified quality failures within 14 days?",
+      "answer": "Yes within 14 days if QC failure documented"
+    }
+  ],
+  "raw_evidence": [
+    {
+      "snippet": "USD per 1,000 pieces (not per piece)",
+      "location": "paragraph 2"
+    },
+    {
+      "snippet": "PP strap L28 USD 2.20 per kg",
+      "location": "paragraph 2"
+    }
+  ]
+}

@@ -1,0 +1,273 @@
+{
+  "vendor_id": "V02",
+  "vendor_name": "CartonWorks LLP",
+  "currency": "INR",
+  "source_format": "pdf",
+  "notes": "Only 27/30 lines quoted (L16, L17, L28 missing). 3.5% settlement discount buried in footnote \u2014 not in unit rates.",
+  "confidence": 0.88,
+  "lines": [
+    {
+      "line_id": "L01",
+      "description": "3-ply RSC carton 300x200x150 mm",
+      "unit_price": 18.13,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L02",
+      "description": "3-ply RSC carton 400x300x200 mm",
+      "unit_price": 25.48,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L03",
+      "description": "3-ply RSC carton 500x400x300 mm",
+      "unit_price": 36.75,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L04",
+      "description": "5-ply RSC carton 300x200x150 mm",
+      "unit_price": 27.44,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L05",
+      "description": "5-ply RSC carton 400x300x200 mm",
+      "unit_price": 39.2,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L06",
+      "description": "5-ply RSC carton 500x400x300 mm",
+      "unit_price": 53.9,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L07",
+      "description": "7-ply heavy RSC 600x500x400 mm",
+      "unit_price": 117.6,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L08",
+      "description": "7-ply heavy RSC 800x600x500 mm",
+      "unit_price": 171.5,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L09",
+      "description": "3-ply die-cut mailer 250x200x50 mm",
+      "unit_price": 13.72,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L10",
+      "description": "5-ply die-cut mailer 350x250x80 mm",
+      "unit_price": 21.07,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L11",
+      "description": "Corrugated pallet tray 1200x800 mm",
+      "unit_price": 83.3,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L12",
+      "description": "Corner guard L-profile 600 mm",
+      "unit_price": 4.12,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L13",
+      "description": "Corner guard L-profile 900 mm",
+      "unit_price": 5.68,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L14",
+      "description": "3-ply corrugated sheet 1200x800 mm",
+      "unit_price": 11.27,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L15",
+      "description": "5-ply corrugated sheet 1200x800 mm",
+      "unit_price": 16.86,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L18",
+      "description": "6-cell partition insert 3-ply",
+      "unit_price": 93.1,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L19",
+      "description": "12-cell partition insert 3-ply",
+      "unit_price": 137.2,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L20",
+      "description": "24-cell partition insert 5-ply",
+      "unit_price": 205.8,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L21",
+      "description": "Telescopic outer 400x300x200 3-ply",
+      "unit_price": 63.7,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L22",
+      "description": "Telescopic inner 400x300x200 3-ply",
+      "unit_price": 58.8,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L23",
+      "description": "Archive box 400x300x250 3-ply",
+      "unit_price": 50.96,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L24",
+      "description": "Archive box 400x300x250 5-ply",
+      "unit_price": 70.56,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L25",
+      "description": "Kraft paper tape 48mm x 100m",
+      "unit_price": 37.24,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L26",
+      "description": "Bubble wrap 1.2m x 50m",
+      "unit_price": 411.6,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L27",
+      "description": "PE foam sheet 5mm 1200x800",
+      "unit_price": 34.3,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L29",
+      "description": "Shrink film 500mm x 300m",
+      "unit_price": 842.8,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L30",
+      "description": "Wooden pallet 1200x800 EUR",
+      "unit_price": 627.2,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    }
+  ],
+  "questionnaire_answers": [
+    {
+      "id": "Q1",
+      "question": "Is the manufacturing site currently ISO 9001 certified?",
+      "answer": "Yes"
+    },
+    {
+      "id": "Q2",
+      "question": "Standard manufacturing lead time (calendar days) for this basket?",
+      "answer": "11"
+    },
+    {
+      "id": "Q3",
+      "question": "Can you support VMI / consignment for top 10 SKUs?",
+      "answer": "No \u2014 not at this time"
+    },
+    {
+      "id": "Q4",
+      "question": "Minimum order quantity per SKU?",
+      "answer": "1000 ea"
+    },
+    {
+      "id": "Q5",
+      "question": "Can you supply FSC-certified board on request?",
+      "answer": "Not available"
+    },
+    {
+      "id": "Q6",
+      "question": "Defect / rejection rate over the last 12 months (%)?",
+      "answer": "0.9"
+    },
+    {
+      "id": "Q7",
+      "question": "Do you accept returns for verified quality failures within 14 days?",
+      "answer": "Credit note within 10 days"
+    }
+  ],
+  "raw_evidence": [
+    {
+      "snippet": "discretionary settlement discount of 3.5%",
+      "location": "footnote"
+    },
+    {
+      "snippet": "27 of 30 lines quoted",
+      "location": "footnote"
+    }
+  ]
+}

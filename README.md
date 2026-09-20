@@ -50,7 +50,8 @@ orchestrator/           Wizard-aware pipeline + persistence
 shared_models.py        Pydantic contracts (incl. awards / inbox / knockouts)
 app_crew.py             FastAPI wizard routes
 templates/crew/         Wizard UI (wizard.html)
-data/vendor_responses/  Sample multi-format vendor replies
+data/vendor_responses/  Ugly-edge binaries (xlsx/pdf/docx/png/email) + extracts
+data/fixtures/           Generator for those samples
 data/inbox/             Stub inbound mail (per RFx)
 data/outbox/            Stub dispatch emails
 data/store/             Session snapshots (gitignored)
@@ -60,5 +61,20 @@ data/store/             Session snapshots (gitignored)
 
 Real SMTP/IMAP, vendor portal, ERP hand-off, multi-user auth. Arithmetic and
 ranking stay in code; the Analyst explains over computed tables.
+
+
+## Ugly edges (seeded inbox)
+
+Real binary samples under `data/vendor_responses/` (regenerate with
+`python data/fixtures/generate_ugly_edges.py`):
+
+1. **V01** Excel ignoring the template — weird columns, per-100 pcs
+2. **V02** PDF letterhead — footnote discount, ~27/30 lines
+3. **V03** Word prose — USD / per 1000
+4. **V04** Angled PNG rate card — per-box / per-bundle
+5. **V05** One-line email — ₹/kg + “same as last year”, freight extra
+
+Compare colors cell statuses `ok|converted|missing|uncertain|uom_mismatch`.
+Award exports Excel/CSV/Markdown. Ask chips include the VP-defend question.
 
 See `DECISIONS.md` and `DEMO_SCRIPT.md`.

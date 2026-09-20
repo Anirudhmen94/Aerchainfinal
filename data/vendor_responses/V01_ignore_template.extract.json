@@ -1,0 +1,285 @@
+{
+  "vendor_id": "V01",
+  "vendor_name": "PackForge India",
+  "currency": "INR",
+  "source_format": "xlsx",
+  "notes": "Excel ignores buyer template; many lines priced per 100 pcs. L08 not quoted (capacity).",
+  "confidence": 0.92,
+  "lines": [
+    {
+      "line_id": "L01",
+      "description": "3-ply RSC carton 300x200x150 mm",
+      "unit_price": 1850.0,
+      "uom": "per 100 pcs",
+      "currency": "INR",
+      "notes": "Quoted ignoring buyer piece template"
+    },
+    {
+      "line_id": "L02",
+      "description": "3-ply RSC carton 400x300x200 mm",
+      "unit_price": 2600.0,
+      "uom": "per 100 pcs",
+      "currency": "INR",
+      "notes": "Quoted ignoring buyer piece template"
+    },
+    {
+      "line_id": "L03",
+      "description": "3-ply RSC carton 500x400x300 mm",
+      "unit_price": 3750.0,
+      "uom": "per 100 pcs",
+      "currency": "INR",
+      "notes": "Quoted ignoring buyer piece template"
+    },
+    {
+      "line_id": "L04",
+      "description": "5-ply RSC carton 300x200x150 mm",
+      "unit_price": 2800.0,
+      "uom": "per 100 pcs",
+      "currency": "INR",
+      "notes": "Quoted ignoring buyer piece template"
+    },
+    {
+      "line_id": "L05",
+      "description": "5-ply RSC carton 400x300x200 mm",
+      "unit_price": 4000.0,
+      "uom": "per 100 pcs",
+      "currency": "INR",
+      "notes": "Quoted ignoring buyer piece template"
+    },
+    {
+      "line_id": "L06",
+      "description": "5-ply RSC carton 500x400x300 mm",
+      "unit_price": 5500.0,
+      "uom": "per 100 pcs",
+      "currency": "INR",
+      "notes": "Quoted ignoring buyer piece template"
+    },
+    {
+      "line_id": "L07",
+      "description": "7-ply heavy RSC 600x500x400 mm",
+      "unit_price": 12000.0,
+      "uom": "per 100 pcs",
+      "currency": "INR",
+      "notes": "Quoted ignoring buyer piece template"
+    },
+    {
+      "line_id": "L09",
+      "description": "3-ply die-cut mailer 250x200x50 mm",
+      "unit_price": 1400.0,
+      "uom": "per 100 pcs",
+      "currency": "INR",
+      "notes": "Quoted ignoring buyer piece template"
+    },
+    {
+      "line_id": "L10",
+      "description": "5-ply die-cut mailer 350x250x80 mm",
+      "unit_price": 2150.0,
+      "uom": "per 100 pcs",
+      "currency": "INR",
+      "notes": "Quoted ignoring buyer piece template"
+    },
+    {
+      "line_id": "L11",
+      "description": "Corrugated pallet tray 1200x800 mm",
+      "unit_price": 8500.0,
+      "uom": "per 100 pcs",
+      "currency": "INR",
+      "notes": "Quoted ignoring buyer piece template"
+    },
+    {
+      "line_id": "L12",
+      "description": "Corner guard L-profile 600 mm",
+      "unit_price": 420.0,
+      "uom": "per 100 pcs",
+      "currency": "INR",
+      "notes": "Quoted ignoring buyer piece template"
+    },
+    {
+      "line_id": "L13",
+      "description": "Corner guard L-profile 900 mm",
+      "unit_price": 580.0,
+      "uom": "per 100 pcs",
+      "currency": "INR",
+      "notes": "Quoted ignoring buyer piece template"
+    },
+    {
+      "line_id": "L14",
+      "description": "3-ply corrugated sheet 1200x800 mm",
+      "unit_price": 1150.0,
+      "uom": "per 100 pcs",
+      "currency": "INR",
+      "notes": "Quoted ignoring buyer piece template"
+    },
+    {
+      "line_id": "L15",
+      "description": "5-ply corrugated sheet 1200x800 mm",
+      "unit_price": 1720.0,
+      "uom": "per 100 pcs",
+      "currency": "INR",
+      "notes": "Quoted ignoring buyer piece template"
+    },
+    {
+      "line_id": "L16",
+      "description": "Corrugated tube OD50 x 300 mm",
+      "unit_price": 8.5,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L17",
+      "description": "Corrugated tube OD75 x 300 mm",
+      "unit_price": 13.0,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L18",
+      "description": "6-cell partition insert 3-ply",
+      "unit_price": 95.0,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L19",
+      "description": "12-cell partition insert 3-ply",
+      "unit_price": 140.0,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L20",
+      "description": "24-cell partition insert 5-ply",
+      "unit_price": 210.0,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L21",
+      "description": "Telescopic outer 400x300x200 3-ply",
+      "unit_price": 65.0,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L22",
+      "description": "Telescopic inner 400x300x200 3-ply",
+      "unit_price": 60.0,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L23",
+      "description": "Archive box 400x300x250 3-ply",
+      "unit_price": 52.0,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L24",
+      "description": "Archive box 400x300x250 5-ply",
+      "unit_price": 72.0,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L25",
+      "description": "Kraft paper tape 48mm x 100m",
+      "unit_price": 38.0,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L26",
+      "description": "Bubble wrap 1.2m x 50m",
+      "unit_price": 420.0,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L27",
+      "description": "PE foam sheet 5mm 1200x800",
+      "unit_price": 35.0,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L28",
+      "description": "PP strapping band 12mm",
+      "unit_price": 185.0,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L29",
+      "description": "Shrink film 500mm x 300m",
+      "unit_price": 860.0,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    },
+    {
+      "line_id": "L30",
+      "description": "Wooden pallet 1200x800 EUR",
+      "unit_price": 640.0,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": ""
+    }
+  ],
+  "questionnaire_answers": [
+    {
+      "id": "Q1",
+      "question": "Is the manufacturing site currently ISO 9001 certified?",
+      "answer": "Yes"
+    },
+    {
+      "id": "Q2",
+      "question": "Standard manufacturing lead time (calendar days) for this basket?",
+      "answer": "14"
+    },
+    {
+      "id": "Q3",
+      "question": "Can you support VMI / consignment for top 10 SKUs?",
+      "answer": "Yes, subject to forecast"
+    },
+    {
+      "id": "Q4",
+      "question": "Minimum order quantity per SKU?",
+      "answer": "500 ea"
+    },
+    {
+      "id": "Q5",
+      "question": "Can you supply FSC-certified board on request?",
+      "answer": "Yes, +3%"
+    },
+    {
+      "id": "Q6",
+      "question": "Defect / rejection rate over the last 12 months (%)?",
+      "answer": "0.5"
+    },
+    {
+      "id": "Q7",
+      "question": "Do you accept returns for verified quality failures within 14 days?",
+      "answer": "Yes"
+    }
+  ],
+  "raw_evidence": [
+    {
+      "snippet": "BASIS=INR per 100 pcs",
+      "location": "OUR_RATES_v3!E"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "vendor_id": "V05",
+  "vendor_name": "NestPack Industries",
+  "currency": "INR",
+  "source_format": "email",
+  "notes": "One-line email. Board quoted per kg (3-ply \u20b938/kg, 5-ply \u20b942/kg) \u2014 NOT piece rates. 'rest same as last year' is uncertain. Freight extra.",
+  "confidence": 0.4,
+  "lines": [
+    {
+      "line_id": "L01",
+      "description": "3-ply board basket (indicative)",
+      "unit_price": 38.0,
+      "uom": "kg",
+      "currency": "INR",
+      "notes": "per-kg board rate \u2014 cannot convert to piece without weight; uncertain"
+    },
+    {
+      "line_id": "L04",
+      "description": "5-ply board basket (indicative)",
+      "unit_price": 42.0,
+      "uom": "kg",
+      "currency": "INR",
+      "notes": "per-kg board rate \u2014 uom_mismatch vs piece"
+    }
+  ],
+  "questionnaire_answers": [
+    {
+      "id": "Q1",
+      "question": "Is the manufacturing site currently ISO 9001 certified?",
+      "answer": ""
+    },
+    {
+      "id": "Q2",
+      "question": "Standard manufacturing lead time (calendar days) for this basket?",
+      "answer": ""
+    }
+  ],
+  "raw_evidence": [
+    {
+      "snippet": "\u20b942/kg for the 5-ply, 38 for the 3-ply, rest same as last year, freight extra.",
+      "location": "email body"
+    }
+  ]
+}

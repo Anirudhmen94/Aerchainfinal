@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, File, Form, Request, UploadFile  # noqa: E402
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse  # noqa: E402
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response  # noqa: E402
 from fastapi.templating import Jinja2Templates  # noqa: E402
 
 from orchestrator.pipeline import (  # noqa: E402
@@ -77,6 +77,28 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
     if pipe.comparison:
         for q in pipe.comparison.qualifications or []:
             qual_map[q.vendor_id] = q
+    # Evidence snippets per vendor (from parsed quotes)
+    evidence_by_vendor: dict[str, str] = {}
+    for q in pipe.quotes or []:
+        bits = []
+        for item in (q.raw_evidence or []):
+            if isinstance(item, dict):
+                sn = str(item.get("snippet") or "").strip()
+                if sn and item.get("kind") != "meta":
+                    bits.append(sn)
+        if q.notes:
+            bits.append(str(q.notes))
+        if bits:
+            evidence_by_vendor[q.vendor_id] = " | ".join(bits)[:400]
+
+    suggested_questions = [
+        "Cheapest per line among qualified vendors?",
+        "Where are the gaps and uncertain cells?",
+        "Which vendors failed knockouts and why?",
+        "Give an award recommendation I can defend to a VP.",
+        "Show me USD / UOM conversions that changed the matrix.",
+    ]
+
     return {
         "pipe": pipe,
         "rfx": pipe.rfx,
@@ -90,6 +112,8 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "qual_map": qual_map,
         "award_summary": pipe.award_summary() if pipe.awards or pipe.award_validation else None,
         "snapshot": pipe.snapshot(),
+        "evidence_by_vendor": evidence_by_vendor,
+        "suggested_questions": suggested_questions,
     }
 
 
@@ -610,3 +634,43 @@ def crew_snapshot(rfx_id: str):
     if not pipe.rfx:
         return JSONResponse({"error": "not found"}, status_code=404)
     return pipe.snapshot()
+
+
+@app.get("/crew/{rfx_id}/award/export.xlsx")
+def crew_award_export_xlsx(rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    data = pipe.export_award("xlsx")
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="award_{rfx_id}.xlsx"'},
+    )
+
+
+@app.get("/crew/{rfx_id}/award/export.csv")
+def crew_award_export_csv(rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    data = pipe.export_award("csv")
+    return Response(
+        content=data,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="award_{rfx_id}.csv"'},
+    )
+
+
+@app.get("/crew/{rfx_id}/award/export.md")
+def crew_award_export_md(rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    data = pipe.export_award("md")
+    return Response(
+        content=data,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="award_{rfx_id}.md"'},
+    )
+

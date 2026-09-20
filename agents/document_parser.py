@@ -35,10 +35,12 @@ def _resolve_haiku_model() -> str:
 HAIKU_MODEL = _resolve_haiku_model()
 
 JSON_CSV_EXTS = {".json", ".csv"}
+XLSX_EXTS = {".xlsx", ".xlsm"}
 TEXT_EXTS = {".txt", ".md", ".eml", ".msg"}
 DOC_EXTS = {".docx", ".pdf"}
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
-SUPPORTED = JSON_CSV_EXTS | TEXT_EXTS | DOC_EXTS | IMAGE_EXTS
+DETERMINISTIC_EXTS = JSON_CSV_EXTS | XLSX_EXTS
+SUPPORTED = DETERMINISTIC_EXTS | TEXT_EXTS | DOC_EXTS | IMAGE_EXTS
 
 SYSTEM_PROMPT = """You are a procurement document parser for vendor RFx replies.
 Extract ONLY facts present in the vendor document. Never invent prices, line items, or answers.
@@ -513,6 +515,216 @@ def _parse_csv(path: Path, vendor_id: str) -> ExtractedQuote:
     )
 
 
+
+def _companion_extract_path(path: Path) -> Path | None:
+    """Look for a same-stem .extract.json beside the vendor file (demo offline aid)."""
+    candidates = [
+        path.with_name(path.stem + ".extract.json"),
+        path.parent / f"{path.name}.extract.json",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    return None
+
+
+def _quote_from_extract_payload(path: Path, vendor_id: str, data: dict[str, Any], *, parse_method: str) -> ExtractedQuote:
+    currency = str(data.get("currency") or "INR")
+    vendor_name = str(data.get("vendor") or data.get("vendor_name") or "")
+    raw_lines = data.get("line_items") or data.get("lines") or data.get("items") or []
+    lines = []
+    for row in raw_lines:
+        if not isinstance(row, dict):
+            continue
+        norm = _normalize_line(dict(row), currency)
+        # Preserve pack-size hints for normalizer UOM conversion
+        for k in ("pack_size", "pieces_per_box", "pieces_per_bundle", "basis_qty"):
+            if k in row and row[k] not in (None, ""):
+                norm[k] = row[k]
+        lines.append(norm)
+    answers = _normalize_answers(
+        data.get("questionnaire")
+        or data.get("questionnaire_answers")
+        or data.get("answers")
+        or {}
+    )
+    notes = str(data.get("notes") or "")
+    conf = data.get("confidence")
+    try:
+        confidence = float(conf) if conf is not None else (0.85 if lines else 0.4)
+    except (TypeError, ValueError):
+        confidence = 0.7
+    evidence_extra: list[dict[str, Any]] = []
+    for item in data.get("raw_evidence") or []:
+        if isinstance(item, dict):
+            evidence_extra.append(
+                {
+                    "snippet": str(item.get("snippet") or item.get("text") or "")[:500],
+                    "location": str(item.get("location") or ""),
+                }
+            )
+    evidence = _meta_evidence(
+        path,
+        parse_method=parse_method,
+        vendor_name=vendor_name,
+        currency=currency,
+        extraction_notes=str(data.get("extraction_notes") or "companion_extract"),
+        extra=evidence_extra,
+    )
+    return _quote(
+        vendor_id=str(data.get("vendor_id") or vendor_id),
+        source_format=str(data.get("source_format") or path.suffix.lstrip(".") or "extract"),
+        lines=lines,
+        questionnaire_answers=answers,
+        notes=notes,
+        confidence=max(0.0, min(1.0, confidence)),
+        raw_evidence=evidence,
+    )
+
+
+def _try_companion_extract(path: Path, vendor_id: str) -> ExtractedQuote | None:
+    companion = _companion_extract_path(path)
+    if not companion:
+        return None
+    try:
+        data = json.loads(companion.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    return _quote_from_extract_payload(
+        path, vendor_id, data, parse_method="companion_extract_json"
+    )
+
+
+def _parse_xlsx(path: Path, vendor_id: str) -> ExtractedQuote:
+    """Deterministic openpyxl parse for weird-column Excel (ignores buyer templates)."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(str(path), data_only=True)
+    lines_out: list[dict[str, Any]] = []
+    answers: list[dict[str, Any]] = []
+    evidence_bits: list[dict[str, Any]] = []
+    currency = "INR"
+    vendor_name = ""
+
+    # Heuristic column aliases for ugly / non-template sheets
+    id_keys = {"buyer_ref_maybe", "line_id", "line#", "line", "lineno", "id", "buyer_line", "rfx_line"}
+    desc_keys = {"what_we_call_it", "description", "item", "item description", "sku_name", "name"}
+    price_keys = {"commercial_rate", "unit_price", "unit price", "rate", "price", "amount", "unit_price_inr"}
+    uom_keys = {"basis", "uom", "unit", "price_basis", "per"}
+    ccy_keys = {"ccy", "currency", "curr"}
+    notes_keys = {"moq_note", "notes", "remarks", "side_note"}
+
+    for sheet in wb.worksheets:
+        title = (sheet.title or "").upper()
+        rows = list(sheet.iter_rows(values_only=True))
+        if not rows:
+            continue
+        # Questionnaire sheet
+        if "QNA" in title or "QUESTION" in title:
+            header = [str(c or "").strip() for c in rows[0]]
+            for raw in rows[1:]:
+                if not raw or all(v is None or str(v).strip() == "" for v in raw):
+                    continue
+                mapped = {header[i].lower(): raw[i] for i in range(min(len(header), len(raw)))}
+                q = mapped.get("prompt_text") or mapped.get("question") or mapped.get("q") or ""
+                a = mapped.get("our_reply") or mapped.get("answer") or mapped.get("a") or ""
+                if q or a:
+                    answers.append({"question": str(q).strip(), "answer": str(a).strip()})
+            continue
+
+        header = [str(c or "").strip() for c in rows[0]]
+        header_l = [h.lower() for h in header]
+        for raw in rows[1:]:
+            if not raw or all(v is None or str(v).strip() == "" for v in raw):
+                continue
+            mapped = {}
+            for i, h in enumerate(header_l):
+                if i < len(raw):
+                    mapped[h] = raw[i]
+            # pick fields
+            line_id = ""
+            for k in id_keys:
+                if k in mapped and mapped[k] not in (None, ""):
+                    line_id = str(mapped[k]).strip()
+                    break
+            description = ""
+            for k in desc_keys:
+                if k in mapped and mapped[k] not in (None, ""):
+                    description = str(mapped[k]).strip()
+                    break
+            price = None
+            for k in price_keys:
+                if k in mapped and mapped[k] not in (None, ""):
+                    price = _as_float(mapped[k])
+                    break
+            uom = ""
+            for k in uom_keys:
+                if k in mapped and mapped[k] not in (None, ""):
+                    uom = str(mapped[k]).strip()
+                    break
+            for k in ccy_keys:
+                if k in mapped and mapped[k] not in (None, ""):
+                    currency = str(mapped[k]).strip().upper() or currency
+                    break
+            notes = ""
+            for k in notes_keys:
+                if k in mapped and mapped[k] not in (None, ""):
+                    notes = str(mapped[k]).strip()
+                    break
+            if not description and price is None:
+                continue
+            # Normalize "INR per 100 pcs" style basis into uom
+            if re.search(r"per\s*100", uom, re.I):
+                uom = "per 100 pcs"
+            elif re.search(r"per\s*1000|per\s*1,000", uom, re.I):
+                uom = "per 1000"
+            norm = {
+                "line_id": line_id,
+                "description": description,
+                "unit_price": price,
+                "uom": uom or "ea",
+                "notes": notes,
+                "currency": currency,
+            }
+            lines_out.append(norm)
+            if price is not None:
+                evidence_bits.append({
+                    "snippet": f"{line_id} {description[:40]} {price} {uom}",
+                    "location": f"{sheet.title}",
+                })
+
+    stem = path.stem
+    m = re.match(r"V\d+[_-]?(.*)$", stem, re.I)
+    if m and m.group(1):
+        vendor_name = m.group(1).replace("_", " ").replace("-", " ").strip()
+        vendor_name = re.sub(r"\s*(response|ignore template)\s*$", "", vendor_name, flags=re.I).strip()
+
+    notes_parts = []
+    messy = [ln for ln in lines_out if re.search(r"100|kg|bundle|box|thousand", ln.get("uom", ""), re.I)]
+    if messy:
+        notes_parts.append(f"{len(messy)} line(s) use non-piece UOMs (per 100 / box / etc.).")
+    notes_parts.append("Parsed from Excel with non-template columns.")
+
+    evidence = _meta_evidence(
+        path,
+        parse_method="deterministic_xlsx",
+        vendor_name=vendor_name,
+        currency=currency,
+        extra=evidence_bits[:40],
+    )
+    return _quote(
+        vendor_id=vendor_id,
+        source_format="xlsx",
+        lines=lines_out,
+        questionnaire_answers=answers,
+        notes=" ".join(notes_parts),
+        confidence=0.9 if lines_out else 0.5,
+        raw_evidence=evidence,
+    )
+
+
 def _extract_txt(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
@@ -884,8 +1096,26 @@ def parse_response(
         quote = _parse_json(p, vid)
     elif suffix == ".csv":
         quote = _parse_csv(p, vid)
+    elif suffix in XLSX_EXTS:
+        quote = _parse_xlsx(p, vid)
     else:
-        quote = _parse_unstructured(p, vid, rfx_ctx)
+        # Prefer companion extract when present and no API key (offline demo),
+        # otherwise try LLM/heuristics; fall back to companion on failure.
+        has_key = bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+        companion_quote = _try_companion_extract(p, vid)
+        if companion_quote is not None and not has_key:
+            quote = companion_quote
+        else:
+            try:
+                quote = _parse_unstructured(p, vid, rfx_ctx)
+                # If LLM returned empty lines but companion has data, prefer companion
+                if companion_quote is not None and not (quote.lines or []):
+                    quote = companion_quote
+            except Exception:
+                if companion_quote is not None:
+                    quote = companion_quote
+                else:
+                    raise
 
     gated = _quality_gate_answers(list(quote.questionnaire_answers or []), rfx_ctx)
     return quote.model_copy(update={"questionnaire_answers": gated})
@@ -967,14 +1197,14 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_VENDOR_DIR = REPO_ROOT / "data" / "vendor_responses"
 DEFAULT_INBOX_DIR = REPO_ROOT / "data" / "inbox"
 
-# Primary demo samples only (ignore leftover V1_sri_* stubs).
+# Primary demo samples — assignment ugly edges (binary + one-line email).
 _PRIMARY_INBOX_SEED: list[tuple[str, str, str]] = [
-    # (source_name, dest_name, kind)  kind: structured | email
-    ("V01_PackForge_response.json", "inbound_V01_PackForge.json", "structured"),
-    ("V02_CartonWorks_response.csv", "inbound_V02_CartonWorks.csv", "structured"),
-    ("V03_PacificBoard_email.txt", "inbound_V03_PacificBoard.eml", "email"),
-    ("V04_QuickCorr_prose.txt", "inbound_V04_QuickCorr.txt", "email"),
-    ("V05_NestPack_messy.txt", "inbound_V05_NestPack.txt", "email"),
+    # (source_name, dest_name, kind)  kind: binary | email | text
+    ("V01_ignore_template.xlsx", "inbound_V01_ignore_template.xlsx", "binary"),
+    ("V02_letterhead_footnote.pdf", "inbound_V02_letterhead_footnote.pdf", "binary"),
+    ("V03_prose_commercials.docx", "inbound_V03_prose_commercials.docx", "binary"),
+    ("V04_rate_card_photo.png", "inbound_V04_rate_card_photo.png", "binary"),
+    ("V05_oneline_email.txt", "inbound_V05_oneline_email.txt", "email"),
 ]
 
 _EMAIL_META = {
@@ -1012,7 +1242,13 @@ def seed_inbox(
     inbox_dir: str | Path | None = None,
     vendor_dir: str | Path | None = None,
 ) -> list[Path]:
-    """Create/refresh stub inbound files from primary vendor_responses. Idempotent."""
+    """Create/refresh stub inbound files from primary vendor_responses. Idempotent.
+
+    Copies real binary samples (xlsx/pdf/docx/png) byte-for-byte and also copies
+    any companion ``*.extract.json`` so offline parse still works without Claude.
+    """
+    import shutil
+
     inbox = Path(inbox_dir) if inbox_dir else DEFAULT_INBOX_DIR
     vendors = Path(vendor_dir) if vendor_dir else DEFAULT_VENDOR_DIR
     inbox.mkdir(parents=True, exist_ok=True)
@@ -1024,13 +1260,21 @@ def seed_inbox(
             # Soft-skip missing samples so seed stays usable mid-refactor
             continue
         dest = inbox / dest_name
-        raw = src.read_text(encoding="utf-8", errors="replace")
         vid = _vendor_id_from_name(src_name) or _vendor_id_from_name(dest_name)
-        if kind == "structured":
-            dest.write_text(raw, encoding="utf-8")
-        else:
+        if kind == "binary":
+            shutil.copy2(src, dest)
+        elif kind == "email":
+            raw = src.read_text(encoding="utf-8", errors="replace")
             dest.write_text(_wrap_as_email(raw, vendor_id=vid, source_name=src_name), encoding="utf-8")
+        else:
+            dest.write_text(src.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
         written.append(dest)
+        # Companion extract for offline / evidence (same stem as dest)
+        companion = vendors / f"{Path(src_name).stem}.extract.json"
+        if companion.exists():
+            dest_companion = inbox / f"{Path(dest_name).stem}.extract.json"
+            shutil.copy2(companion, dest_companion)
+            written.append(dest_companion)
     return written
 
 
@@ -1042,6 +1286,8 @@ def list_inbox(inbox_dir: str | Path | None = None) -> list[dict]:
     rows: list[dict] = []
     for path in sorted(inbox.iterdir()):
         if not path.is_file() or path.name.startswith("."):
+            continue
+        if path.name.endswith(".extract.json"):
             continue
         if path.suffix.lower() not in SUPPORTED and path.suffix.lower() not in {".md"}:
             continue
@@ -1082,10 +1328,12 @@ def parse_all(
     for path in sorted(d.iterdir()):
         if not path.is_file() or path.name.startswith("."):
             continue
+        if path.name.endswith(".extract.json"):
+            continue
         suffix = path.suffix.lower()
         if suffix not in SUPPORTED and suffix not in {".md"}:
             continue
-        if skip_llm and suffix not in JSON_CSV_EXTS:
+        if skip_llm and suffix not in DETERMINISTIC_EXTS:
             continue
         vid = _guess_vendor_id(path)
         if allow is not None and vid.upper() not in allow:

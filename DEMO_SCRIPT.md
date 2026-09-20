@@ -1,57 +1,75 @@
-# Demo script — RFx Crew
+# Demo script — RFx Crew (wizard + ugly edges)
 
-~10–12 minutes plus model latency. Stub dispatch/parse(JSON·CSV)/normalize is near-instant.
+~10–12 minutes plus model latency. Stub dispatch / deterministic parse / normalize is near-instant.
 
 ## 0. Setup
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # ANTHROPIC_API_KEY for live draft + unstructured parse
+cp .env.example .env   # ANTHROPIC_API_KEY for live draft + vision/LLM parse
+python data/fixtures/generate_ugly_edges.py   # refresh binary samples if needed
 uvicorn app_crew:app --port 8518 --reload
 ```
 
-Open http://127.0.0.1:8518 — header chips show the five agents.
+Open http://127.0.0.1:8518 — header shows the live product wizard.
 `/healthz` should report `"app": "rfx-crew"`.
 
-## 1. Brief → Drafter (1–2 min)
+## 1. Draft (1–2 min)
 
-Home page. Read the pre-filled Chakan snacks / corrugated brief. Click **Draft RFx**.
-On the board: line IDs, knockout questionnaire, five vendors. Note `rfx_id` — snapshots
-land in `data/store/`.
+Home → start with the Chakan snacks / corrugated brief → **Generate line items**.
+Board shows ~30 lines, knockout questionnaire, five vendors. Note `rfx_id`.
 
-## 2. Dispatcher (1 min)
+## 2. Send (1 min)
 
-Click **Send to N vendors**. Outbox panel (and `data/outbox/`) shows one stub email per
-vendor. Nothing hit SMTP; the artefact is the point.
+Cover email previews → **Send to vendors**. Outbox (`data/outbox/`) has one stub
+email per vendor. Nothing hit SMTP.
 
-## 3. Parser / ingest (2 min)
+## 3. Inbox — ugly edges (2–3 min)
 
-Click **Ingest sample files**. Walk samples under `data/vendor_responses/` — JSON per-100,
-CSV with gaps, USD/1000 text, bundle rate card, per-kg email. Confidence and row counts
-show on each card. Optional: upload your own file.
+**Seed sample replies** loads the five assignment formats from `data/vendor_responses/`:
 
-## 4. Normalizer (2–3 min)
+| File | Ugly edge the buyer should notice |
+|---|---|
+| `V01_ignore_template.xlsx` | Weird columns; rates **per 100 pcs** (ignores piece template) |
+| `V02_letterhead_footnote.pdf` | Letterhead PDF; **~27/30 lines**; **3.5% discount in footnote** |
+| `V03_prose_commercials.docx` | Word prose; **USD / per 1000** (FX + UOM) |
+| `V04_rate_card_photo.png` | Angled phone photo; **per-box / per-bundle** |
+| `V05_oneline_email.txt` | `₹42/kg for the 5-ply, 38 for the 3-ply, rest same as last year, freight extra.` |
 
-Click **Build comparison**. Walk `converted` / `missing` / `uncertain` / `uom_mismatch`
-cells and vendor flags under the table. No silent arithmetic.
+**Parse all**. Cards show format + confidence + questionnaire answers alongside numbers.
 
-## 5. Analyst (3–4 min)
+## 4. Compare (2–3 min)
 
-Ask, in order:
+**Build comparison**. Walk colored statuses:
 
-1. **“Cheapest per line”**
-2. **“Vendor totals”**
-3. **“Where are the gaps?”**
-4. Free-form award / risk question
+- `converted` — USD→INR and/or per-100 / per-1000 / per-box math
+- `missing` — lines the PDF/photo/email never quoted
+- `uncertain` — “same as last year”, low confidence
+- `uom_mismatch` — kg / box without safe piece conversion
 
-Expand **Data used** under an answer to show helper output.
+Expand a cell for original currency/UOM + flags + evidence snippet.
+Knockout **Q / XQ** badges gate award eligibility.
 
-## 6. Close (1 min)
+## 5. Ask (2–3 min)
 
-Show `/crew/{id}/snapshot` JSON (contracts match `shared_models`). Mention `DECISIONS.md`:
-why five agents, why FastAPI, why a **new** Vercel URL for `app_crew.py`.
+Use the suggested chips, especially:
+
+> **Give an award recommendation I can defend to a VP.**
+
+Also: cheapest qualified split, gaps, FX/UOM conversions. Expand caveats under answers.
+
+## 6. Award + export (1–2 min)
+
+**Suggest cheapest split** → review dropdowns (qualified + priced only) → **Save**.
+Export **Excel / CSV / Markdown** of the award decision (or Print).
+
+## 7. Close (30 s)
+
+`/crew/{id}/snapshot` JSON matches `shared_models`. Point at `DECISIONS.md`: why five
+agents, why FastAPI, why a **new** Vercel URL for `app_crew.py`, how uncertainty is shown.
 
 ## If asked “is this hardcoded?”
 
-Change the brief, re-draft, re-ingest. Line IDs and matrix shift with the drafted RFx;
-rankings recompute from cells — no canned award paragraph.
+Change the brief, re-draft, re-seed. Line IDs and matrix shift with the drafted RFx;
+rankings recompute from cells — no canned award paragraph. Binary samples are generated
+artifacts, not screenshots of a fake UI.

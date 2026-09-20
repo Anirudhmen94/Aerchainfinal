@@ -272,6 +272,15 @@
     </div>
   </details>
 
+  <div class="flex flex-wrap gap-2 text-[11px] mb-2">
+    <span class="status-pill status-ok">ok</span>
+    <span class="status-pill status-converted">converted</span>
+    <span class="status-pill status-uncertain">uncertain</span>
+    <span class="status-pill status-uom_mismatch">uom_mismatch</span>
+    <span class="status-pill status-missing">missing</span>
+    <span class="text-slate-500">Click a cell for FX/UOM notes + evidence.</span>
+  </div>
+
   <div class="overflow-auto max-h-[28rem] border border-slate-200 rounded-lg">
     <table class="matrix w-full">
       <thead class="bg-slate-50 sticky top-0">
@@ -298,12 +307,35 @@
           </td>
           {% for vid in vendors_in_matrix %}
             {% set cell = cell_map.get((li.line_id, vid)) %}
-            <td class="text-right tabular-nums {% if vid not in (cmp.award_eligible_vendors or []) %}opacity-40{% endif %}">
-              {% if cell and cell.unit_price_inr is not none %}
-                ₹{{ '%.2f'|format(cell.unit_price_inr) }}
-                <div class="text-[10px] text-slate-400">{{ cell.status }}</div>
+            {% set st = (cell.status if cell else 'missing') %}
+            <td class="text-right tabular-nums cell-{{ st }} {% if vid not in (cmp.award_eligible_vendors or []) %}opacity-40{% endif %}">
+              {% if cell %}
+              <details>
+                <summary class="cursor-pointer list-none">
+                  {% if cell.unit_price_inr is not none %}
+                    ₹{{ '%.2f'|format(cell.unit_price_inr) }}
+                  {% else %}
+                    <span class="text-slate-400">—</span>
+                  {% endif %}
+                  <div><span class="status-pill status-{{ st }}">{{ st }}</span></div>
+                </summary>
+                <div class="mt-1 text-left text-[10px] text-slate-600 space-y-0.5">
+                  {% if cell.original_price is not none %}
+                  <div>Orig: {{ cell.original_currency or '?' }} {{ cell.original_price }}
+                    {% if cell.original_uom %}/ {{ cell.original_uom }}{% endif %}
+                  </div>
+                  {% endif %}
+                  {% for f in (cell.flags or []) %}
+                  <div class="text-amber-800">• {{ f }}</div>
+                  {% endfor %}
+                  {% set ev = (evidence_by_vendor or {}).get(vid) %}
+                  {% if ev %}
+                  <div class="text-slate-500 italic truncate" title="{{ ev }}">Evidence: {{ ev[:120] }}{% if ev|length > 120 %}…{% endif %}</div>
+                  {% endif %}
+                </div>
+              </details>
               {% else %}
-                <span class="text-slate-300">—</span>
+                <span class="status-pill status-missing">missing</span>
               {% endif %}
             </td>
           {% endfor %}
@@ -312,6 +344,17 @@
       </tbody>
     </table>
   </div>
+
+  {% if cmp.vendor_flags %}
+  <details class="text-sm">
+    <summary class="cursor-pointer font-medium">Vendor FX / UOM / coverage notes</summary>
+    <ul class="mt-2 text-xs text-slate-600 space-y-1">
+      {% for vid, flags in cmp.vendor_flags.items() %}
+        {% if flags %}<li><strong>{{ (cmp.vendor_names or {}).get(vid, vid) }}:</strong> {{ flags|join('; ') }}</li>{% endif %}
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
 
   <form method="post" action="/crew/{{ rfx.rfx_id }}/compare/continue">
     <button class="btn" type="submit">Continue to Ask →</button>
@@ -354,9 +397,17 @@
     {% endif %}
   </div>
 
+  <div class="flex flex-wrap gap-2">
+    {% for s in suggested_questions %}
+    <button type="button" class="chip chip-info hover:ring-1 hover:ring-indigo-300"
+            onclick="(function(btn){var i=document.getElementById('ask-q'); i.value=btn.getAttribute('data-q'); i.focus();})(this)"
+            data-q="{{ s }}">{{ s }}</button>
+    {% endfor %}
+  </div>
+
   <form hx-post="/crew/{{ rfx.rfx_id }}/ask" hx-target="#chat-log" hx-swap="beforeend"
         class="flex gap-2" onsubmit="setTimeout(()=>this.reset(), 50)">
-    <input name="question" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+    <input id="ask-q" name="question" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
            placeholder="e.g. cheapest per line among qualified vendors?" required autocomplete="off" />
     <button class="btn" type="submit">Ask</button>
   </form>
@@ -372,11 +423,14 @@
       <h2 class="font-medium text-lg">6 · Award</h2>
       <p class="text-sm text-slate-600">Pick a qualified vendor with a price for each line. Dropdowns are filtered to award-eligible vendors.</p>
     </div>
-    <div class="flex gap-2 no-print">
+    <div class="flex flex-wrap gap-2 no-print">
       <form method="post" action="/crew/{{ rfx.rfx_id }}/award/suggest">
         <button class="btn-sec" type="submit">Suggest cheapest split</button>
       </form>
-      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/print" target="_blank">Print / export</a>
+      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/print" target="_blank">Print</a>
+      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/export.xlsx">Export Excel</a>
+      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/export.csv">Export CSV</a>
+      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/export.md">Export Markdown</a>
     </div>
   </div>
 

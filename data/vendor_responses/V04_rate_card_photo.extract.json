@@ -1,0 +1,255 @@
+{
+  "vendor_id": "V04",
+  "vendor_name": "QuickCorr Pvt Ltd",
+  "currency": "INR",
+  "source_format": "png",
+  "notes": "Angled phone photo of printed rate card. Many lines per-box/per-bundle; several RFx lines missing from card.",
+  "confidence": 0.72,
+  "lines": [
+    {
+      "line_id": "L01",
+      "description": "3-ply RSC carton 300x200x150 mm",
+      "unit_price": 925,
+      "uom": "per box",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=50",
+      "pack_size": 50,
+      "pieces_per_box": 50,
+      "pieces_per_bundle": null
+    },
+    {
+      "line_id": "L02",
+      "description": "3-ply RSC carton 400x300x200 mm",
+      "unit_price": 1300,
+      "uom": "per box",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=50",
+      "pack_size": 50,
+      "pieces_per_box": 50,
+      "pieces_per_bundle": null
+    },
+    {
+      "line_id": "L03",
+      "description": "3-ply RSC carton 500x400x300 mm",
+      "unit_price": 1875,
+      "uom": "per box",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=50",
+      "pack_size": 50,
+      "pieces_per_box": 50,
+      "pieces_per_bundle": null
+    },
+    {
+      "line_id": "L04",
+      "description": "5-ply RSC carton 300x200x150 mm",
+      "unit_price": 1400,
+      "uom": "per box",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=50",
+      "pack_size": 50,
+      "pieces_per_box": 50,
+      "pieces_per_bundle": null
+    },
+    {
+      "line_id": "L05",
+      "description": "5-ply RSC carton 400x300x200 mm",
+      "unit_price": 2000,
+      "uom": "per box",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=50",
+      "pack_size": 50,
+      "pieces_per_box": 50,
+      "pieces_per_bundle": null
+    },
+    {
+      "line_id": "L06",
+      "description": "5-ply RSC carton 500x400x300 mm",
+      "unit_price": 2750,
+      "uom": "per box",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=50",
+      "pack_size": 50,
+      "pieces_per_box": 50,
+      "pieces_per_bundle": null
+    },
+    {
+      "line_id": "L07",
+      "description": "7-ply heavy RSC 600x500x400 mm",
+      "unit_price": 2400,
+      "uom": "per bundle",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=20",
+      "pack_size": 20,
+      "pieces_per_box": null,
+      "pieces_per_bundle": 20
+    },
+    {
+      "line_id": "L08",
+      "description": "7-ply heavy RSC 800x600x500 mm",
+      "unit_price": 3500,
+      "uom": "per bundle",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=20",
+      "pack_size": 20,
+      "pieces_per_box": null,
+      "pieces_per_bundle": 20
+    },
+    {
+      "line_id": "L09",
+      "description": "3-ply die-cut mailer 250x200x50 mm",
+      "unit_price": 700,
+      "uom": "per box",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=50",
+      "pack_size": 50,
+      "pieces_per_box": 50,
+      "pieces_per_bundle": null
+    },
+    {
+      "line_id": "L10",
+      "description": "5-ply die-cut mailer 350x250x80 mm",
+      "unit_price": 1075,
+      "uom": "per box",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=50",
+      "pack_size": 50,
+      "pieces_per_box": 50,
+      "pieces_per_bundle": null
+    },
+    {
+      "line_id": "L11",
+      "description": "Corrugated pallet tray 1200x800 mm",
+      "unit_price": 85,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": "Rate card photo",
+      "pack_size": 1,
+      "pieces_per_box": null,
+      "pieces_per_bundle": null
+    },
+    {
+      "line_id": "L12",
+      "description": "Corner guard L-profile 600 mm",
+      "unit_price": 84,
+      "uom": "per bundle",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=20",
+      "pack_size": 20,
+      "pieces_per_box": null,
+      "pieces_per_bundle": 20
+    },
+    {
+      "line_id": "L13",
+      "description": "Corner guard L-profile 900 mm",
+      "unit_price": 116,
+      "uom": "per bundle",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=20",
+      "pack_size": 20,
+      "pieces_per_box": null,
+      "pieces_per_bundle": 20
+    },
+    {
+      "line_id": "L18",
+      "description": "6-cell partition insert 3-ply",
+      "unit_price": 1900,
+      "uom": "per box",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=20",
+      "pack_size": 20,
+      "pieces_per_box": 20,
+      "pieces_per_bundle": null
+    },
+    {
+      "line_id": "L19",
+      "description": "12-cell partition insert 3-ply",
+      "unit_price": 2800,
+      "uom": "per box",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=20",
+      "pack_size": 20,
+      "pieces_per_box": 20,
+      "pieces_per_bundle": null
+    },
+    {
+      "line_id": "L20",
+      "description": "24-cell partition insert 5-ply",
+      "unit_price": 4200,
+      "uom": "per box",
+      "currency": "INR",
+      "notes": "Rate card photo; pack_size=20",
+      "pack_size": 20,
+      "pieces_per_box": 20,
+      "pieces_per_bundle": null
+    },
+    {
+      "line_id": "L25",
+      "description": "Kraft paper tape 48mm x 100m",
+      "unit_price": 38,
+      "uom": "roll",
+      "currency": "INR",
+      "notes": "Rate card photo",
+      "pack_size": 1,
+      "pieces_per_box": null,
+      "pieces_per_bundle": null
+    },
+    {
+      "line_id": "L30",
+      "description": "Wooden pallet 1200x800 EUR",
+      "unit_price": 640,
+      "uom": "ea",
+      "currency": "INR",
+      "notes": "Rate card photo",
+      "pack_size": 1,
+      "pieces_per_box": null,
+      "pieces_per_bundle": null
+    }
+  ],
+  "questionnaire_answers": [
+    {
+      "id": "Q1",
+      "question": "Is the manufacturing site currently ISO 9001 certified?",
+      "answer": "Yes"
+    },
+    {
+      "id": "Q2",
+      "question": "Standard manufacturing lead time (calendar days) for this basket?",
+      "answer": "12"
+    },
+    {
+      "id": "Q3",
+      "question": "Can you support VMI / consignment for top 10 SKUs?",
+      "answer": "Case-by-case"
+    },
+    {
+      "id": "Q4",
+      "question": "Minimum order quantity per SKU?",
+      "answer": "400"
+    },
+    {
+      "id": "Q5",
+      "question": "Can you supply FSC-certified board on request?",
+      "answer": "Yes on request"
+    },
+    {
+      "id": "Q6",
+      "question": "Defect / rejection rate over the last 12 months (%)?",
+      "answer": "0.6"
+    },
+    {
+      "id": "Q7",
+      "question": "Do you accept returns for verified quality failures within 14 days?",
+      "answer": "Yes, 14 days"
+    }
+  ],
+  "raw_evidence": [
+    {
+      "snippet": "\u20b9925 / box (50 pcs)",
+      "location": "rate card photo L01"
+    },
+    {
+      "snippet": "\u20b92,400 / bundle (20)",
+      "location": "rate card photo L07"
+    }
+  ]
+}

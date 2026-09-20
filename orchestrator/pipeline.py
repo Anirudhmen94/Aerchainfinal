@@ -608,6 +608,92 @@ class RFxPipeline:
 
     # ── Wizard navigation ──────────────────────────────────────────────
 
+    def export_award(self, fmt: str = "csv") -> bytes | str:
+        """Export current award decision as Excel / CSV / Markdown."""
+        import csv
+        import io
+
+        summary = self.award_summary()
+        rows = summary.get("lines") or []
+        # Ensure we have line-level rows even if only awards map is filled
+        if not rows and self.rfx and self.awards and self.comparison:
+            summary = self.award_summary()
+            rows = summary.get("lines") or []
+
+        headers = [
+            "line_id",
+            "description",
+            "qty",
+            "vendor_id",
+            "vendor_name",
+            "unit_price_inr",
+            "extended_inr",
+        ]
+
+        def _row_vals(r: dict[str, Any]) -> list[Any]:
+            return [
+                r.get("line_id", ""),
+                r.get("description", ""),
+                r.get("qty", ""),
+                r.get("vendor_id", ""),
+                r.get("vendor_name", ""),
+                r.get("unit_price_inr", ""),
+                r.get("extended_inr", ""),
+            ]
+
+        fmt = (fmt or "csv").lower().lstrip(".")
+        if fmt in {"xlsx", "excel"}:
+            from openpyxl import Workbook
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Award"
+            ws.append(headers)
+            for r in rows:
+                if isinstance(r, dict):
+                    ws.append(_row_vals(r))
+            ws.append([])
+            ws.append(["Total INR", summary.get("total_inr") or 0])
+            ws.append(["RFx", self.rfx.rfx_id if self.rfx else ""])
+            buf = io.BytesIO()
+            wb.save(buf)
+            return buf.getvalue()
+
+        if fmt in {"md", "markdown"}:
+            md = summary.get("markdown") or ""
+            if not md:
+                lines = [
+                    f"# Award decision — {self.rfx.rfx_id if self.rfx else ''}",
+                    "",
+                    "| Line | Vendor | ₹/pc | Extended |",
+                    "|---|---|---:|---:|",
+                ]
+                for r in rows:
+                    if not isinstance(r, dict):
+                        continue
+                    up = r.get("unit_price_inr")
+                    ext = r.get("extended_inr")
+                    lines.append(
+                        f"| {r.get('line_id','')} | {r.get('vendor_name') or r.get('vendor_id','')} | "
+                        f"{'' if up is None else f'{up:.2f}'} | {'' if ext is None else f'{ext:.2f}'} |"
+                    )
+                lines.append("")
+                lines.append(f"**Total:** ₹{summary.get('total_inr') or 0:,.2f}")
+                md = "\n".join(lines)
+            return md if isinstance(md, str) else str(md)
+
+        # csv default
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(headers)
+        for r in rows:
+            if isinstance(r, dict):
+                writer.writerow(_row_vals(r))
+        writer.writerow([])
+        writer.writerow(["total_inr", summary.get("total_inr") or 0])
+        return buf.getvalue().encode("utf-8")
+
+
     def completion(self) -> dict[str, bool]:
         return {
             "draft": bool(self.rfx and self.rfx.line_items),
