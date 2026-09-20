@@ -253,9 +253,11 @@ def home(request: Request):
         "and namkeen (mostly 3-ply, some 5-ply for export and heavier loads), a few die-cut "
         "display trays, and some 7-ply master cartons for palletised export. Total spend last "
         "year was around Rs 3.8 crore. Deliveries weekly to Chakan, prices delivered and "
-        "exclusive of GST, 60-day validity, 45-day payment. Vendors must have ISO 9001 and be "
-        "able to provide BCT test reports; FSC Chain of Custody and food-contact (FDA/BFRO) "
-        "certification are knockout requirements. Print is mostly 1-2 colour flexo with our brand marks."
+        "exclusive of GST, 60-day validity, 45-day payment. Print is mostly 1-2 colour flexo. "
+        "Build a quality questionnaire with exactly 8 questions covering: ISO 9001 (KO), "
+        "FSC Chain of Custody (KO), food-contact/hygiene certification (KO), in-house BCT/ECT "
+        "testing, capacity, lead time to first delivery, moisture/contamination control, and "
+        "snacks-customer references (3–4 of these must be knockouts)."
     )
     return _render(request, "crew/index.html", events=events, example_brief=example)
 
