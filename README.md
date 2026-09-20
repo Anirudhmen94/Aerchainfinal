@@ -1,25 +1,27 @@
-# Aerchainfinal — RFx Crew (live product wizard)
+# Aerchainfinal — RFx Crew (free tabbed workspace)
 
-Evidence-minded sourcing prototype for corrugated packaging. A buyer walks a
-**sequential wizard**: Draft → Send → Inbox → Compare → Ask → Award. Five agents
+Evidence-minded sourcing prototype for corrugated packaging. A buyer works in a
+**free tabbed workspace**: Draft | Send | Inbox | Compare | Ask | Award. Open any
+tab anytime — empty panels explain what’s missing (no unlock gates). Five agents
 power each stage; the orchestrator persists state under `data/store/`.
 
 Repository: https://github.com/Anirudhmen94/Aerchainfinal
 
 Entrypoint: `app_crew:app` (not the older kill-the-quote-spreadsheet project).
 
-## Wizard steps
+## Workspace tabs
 
-| Step | What the buyer does | Agent |
+| Tab | What the buyer does | Agent |
 |---|---|---|
-| **Draft** | Edit brief + title/scope/terms → **Generate line items** (30 lines + questionnaire + vendors) → tweak lines → Continue | RFx Drafter |
+| **Draft** | Edit brief + title/scope/terms → **Generate line items** (30 lines + questionnaire + vendors) → tweak lines | RFx Drafter |
 | **Send** | Review cover email previews → **Send to vendors** → outbox confirmation | Vendor Dispatcher (SMTP stubbed → `data/outbox/`) |
 | **Inbox** | Seed/upload stub replies → **Parse** / **Parse all** → quotations + questionnaire answers | Document Parser |
 | **Compare** | Side-by-side INR matrix, coverage, knockout pass/fail badges; only qualified vendors are award-eligible | Normalizer + qualification |
 | **Ask** | Persistent live chat with the Analyst (history kept) | Analyst |
 | **Award** | Per-line dropdown (qualified vendors with a price) → save → summary / print | Analyst `validate_award` / `suggest_split_award` |
 
-Next step unlocks only when the previous stage is complete (Back always allowed).
+Navigation is free — no unlock gates. Empty panels explain what’s missing.
+A dismissible **Quick start** tip on the home page is optional (localStorage).
 An optional **auto-run demo (e2e)** link on the home page still exists for one-shot demos.
 
 ## Run locally
@@ -31,7 +33,7 @@ cp .env.example .env   # set ANTHROPIC_API_KEY
 uvicorn app_crew:app --port 8518 --reload
 ```
 
-Open http://127.0.0.1:8518 — start a draft and walk the wizard.
+Open http://127.0.0.1:8518 — start a draft and use any tab.
 
 Without `ANTHROPIC_API_KEY`, structured JSON/CSV parse + normalize + offline analyst
 still work once an RFx exists; drafting and unstructured parse need the key.
@@ -46,10 +48,10 @@ Verify `/healthz` returns `"app": "rfx-crew"`. See `DEPLOY.md`.
 
 ```
 agents/                 Five crew agents + qualification.py
-orchestrator/           Wizard-aware pipeline + persistence
+orchestrator/           Tab-aware pipeline + persistence
 shared_models.py        Pydantic contracts (incl. awards / inbox / knockouts)
-app_crew.py             FastAPI wizard routes
-templates/crew/         Wizard UI (wizard.html)
+app_crew.py             FastAPI workspace routes
+templates/crew/         Tabbed UI (wizard.html)
 data/vendor_responses/  Ugly-edge binaries (xlsx/pdf/docx/png/email) + extracts
 data/fixtures/           Generator for those samples
 data/inbox/             Stub inbound mail (per RFx)

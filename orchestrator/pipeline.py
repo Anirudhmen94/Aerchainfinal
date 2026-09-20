@@ -1,6 +1,7 @@
-"""Orchestrator — wizard flow: Draft → Send → Inbox → Compare → Ask → Award.
+"""Orchestrator — free tabbed workspace: Draft | Send | Inbox | Compare | Ask | Award.
 
 Wires public agent APIs; persists snapshots under data/store/.
+Navigation is free — wizard_step is the last-open tab, not a lock gate.
 """
 from __future__ import annotations
 
@@ -73,7 +74,7 @@ def _to_quote(payload: Any, rfx: Optional[RFx] = None) -> ExtractedQuote:
 
 
 class RFxPipeline:
-    """In-memory crew session for one sourcing event (wizard-aware)."""
+    """In-memory crew session for one sourcing event (tab-aware)."""
 
     def __init__(self) -> None:
         self.brief: str = ""
@@ -705,29 +706,13 @@ class RFxPipeline:
         }
 
     def unlocked_steps(self) -> list[str]:
-        done = self.completion()
-        unlocked = ["draft"]
-        if done["draft"]:
-            unlocked.append("send")
-        if done["send"]:
-            unlocked.append("inbox")
-        if done["inbox"]:
-            unlocked.append("compare")
-        if done["compare"]:
-            unlocked.append("ask")
-        if done["ask"] or self.wizard_step in ("ask", "award") or done["award"]:
-            unlocked.append("award")
-        return unlocked
+        """All tabs are always available (kept for template/API compat)."""
+        return list(WIZARD_STEPS)
 
     def set_wizard_step(self, step: str) -> str:
+        """Switch the active tab. Never blocks — empty panels handle missing data."""
         if step not in WIZARD_STEPS:
             raise ValueError(f"Unknown step {step}")
-        unlocked = self.unlocked_steps()
-        if step not in unlocked:
-            # Allow going back to any earlier completed step index ≤ max unlocked
-            max_idx = max(WIZARD_STEPS.index(s) for s in unlocked)
-            if WIZARD_STEPS.index(step) > max_idx:
-                raise RuntimeError(f"Step '{step}' is locked. Complete prior steps first.")
         self.wizard_step = step
         if step == "inbox" and not self.inbox and self.dispatch_log:
             try:
@@ -735,34 +720,22 @@ class RFxPipeline:
             except Exception:
                 pass
         if step == "send" and self.rfx:
-            self.refresh_cover_previews()
+            try:
+                self.refresh_cover_previews()
+            except Exception:
+                pass
         self._persist()
         return self.wizard_step
 
     def advance(self) -> str:
+        """Move to the next tab in order (soft helper; no unlock gates)."""
         order = WIZARD_STEPS
         cur = self.wizard_step if self.wizard_step in order else "draft"
         idx = order.index(cur)
-        done = self.completion()
-        # Soft-complete ask when advancing from ask
-        if cur == "ask":
-            self.wizard_step = "ask"
-            self._persist()
-        for nxt in order[idx + 1 :]:
-            if nxt == "award":
-                self.wizard_step = "ask"
-                self._persist()
-            unlocked = self.unlocked_steps()
-            if nxt in unlocked or (nxt == "award" and done["compare"]):
-                self.wizard_step = nxt
-                if nxt == "inbox" and not self.inbox:
-                    self.seed_inbox()
-                if nxt == "send":
-                    self.refresh_cover_previews()
-                self._persist()
-                return self.wizard_step
-            break
-        return self.wizard_step
+        if idx + 1 >= len(order):
+            return self.wizard_step
+        nxt = order[idx + 1]
+        return self.set_wizard_step(nxt)
 
     # ── E2E / snapshot ─────────────────────────────────────────────────
 

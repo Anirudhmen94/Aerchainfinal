@@ -24,6 +24,10 @@ dependency. Each agent stays a plain Python module.
 
 ## Choices with trade-offs
 
+- **Free tabs, not a locked wizard.** Day-1 guided flow as hard structure was dropped.
+  Persistent top tabs (Draft | Send | Inbox | Compare | Ask | Award) are always open;
+  empty states + optional Quick start tip replace unlock gates. `wizard_step` remains
+  as last-open tab memory only.
 - **FastAPI + Jinja/HTMX, not Streamlit.** Fits Vercel’s request model and a permanent
   public URL; evidence/matrix UI is ordinary HTML partials.
 - **New Vercel project / URL.** Entrypoint `app_crew.py` is separate from any prior

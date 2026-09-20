@@ -1,38 +1,30 @@
 {% extends "crew/base.html" %}
-{% block title %}{{ rfx.title }} · Wizard{% endblock %}
+{% block title %}{{ rfx.title }} · Workspace{% endblock %}
 {% block content %}
 {% set labels = {"draft":"Draft","send":"Send","inbox":"Inbox","compare":"Compare","ask":"Ask","award":"Award"} %}
 
 <div class="mb-6 no-print">
   <div class="text-xs text-slate-500">{{ rfx.rfx_id }}</div>
   <h1 class="text-2xl font-semibold">{{ rfx.title }}</h1>
-  <div class="mt-4 flex flex-wrap items-center gap-2">
+  <nav class="mt-4 flex flex-wrap items-center gap-2" aria-label="Workspace tabs">
     {% for s in steps %}
-      {% set unlocked_s = s in unlocked %}
       {% set is_cur = s == step %}
       {% set is_done = done.get(s) %}
-      {% if unlocked_s %}
       <a href="/crew/{{ rfx.rfx_id }}/wizard?step={{ s }}"
-         class="flex items-center gap-2 px-2 py-1 rounded-lg {% if is_cur %}bg-indigo-50 ring-1 ring-indigo-200{% else %}hover:bg-slate-100{% endif %}">
-        <span class="step-dot {% if is_cur %}step-cur{% elif is_done %}step-done{% else %}step-open{% endif %}">{{ loop.index }}</span>
-        <span class="text-sm {% if is_cur %}font-semibold text-indigo-900{% else %}text-slate-700{% endif %}">{{ labels[s] }}</span>
+         class="tab-pill {% if is_cur %}tab-cur{% else %}tab-open{% endif %}"
+         {% if is_cur %}aria-current="page"{% endif %}>
+        {{ labels[s] }}
+        {% if is_done and not is_cur %}<span class="tab-done-dot" title="Has data"></span>{% endif %}
       </a>
-      {% else %}
-      <div class="flex items-center gap-2 px-2 py-1 opacity-50 cursor-not-allowed" title="Complete prior steps">
-        <span class="step-dot step-lock">{{ loop.index }}</span>
-        <span class="text-sm text-slate-500">{{ labels[s] }}</span>
-      </div>
-      {% endif %}
-      {% if not loop.last %}<span class="text-slate-300">→</span>{% endif %}
     {% endfor %}
-  </div>
+  </nav>
 </div>
 
 {# ═══════════════ DRAFT ═══════════════ #}
 {% if step == "draft" %}
 <section class="card space-y-4">
-  <h2 class="font-medium text-lg">1 · Draft RFx</h2>
-  <p class="text-sm text-slate-600">Edit the brief and fields, then generate exactly 30 line items + questionnaire + vendor list. Tweak lines before continuing.</p>
+  <h2 class="font-medium text-lg">Draft RFx</h2>
+  <p class="text-sm text-slate-600">Edit the brief and fields, then generate line items + questionnaire + vendor list. Tweak lines anytime — other tabs stay open.</p>
   <form method="post" action="/crew/{{ rfx.rfx_id }}/draft/generate" class="space-y-3" id="gen-form">
     <label class="block text-sm font-medium">Brief</label>
     <textarea name="brief" rows="5" class="w-full rounded-lg border border-slate-300 p-3 text-sm" required>{{ pipe.brief }}</textarea>
@@ -79,7 +71,7 @@
     </div>
     <div class="flex flex-wrap gap-2">
       <button class="btn-sec" type="submit">Save line edits</button>
-      <button class="btn" formaction="/crew/{{ rfx.rfx_id }}/draft/continue" formmethod="post">Continue to Send →</button>
+      <button class="btn-sec" formaction="/crew/{{ rfx.rfx_id }}/draft/continue" formmethod="post">Open Send →</button>
     </div>
   </form>
   <details class="text-sm">
@@ -108,7 +100,7 @@
 {# ═══════════════ SEND ═══════════════ #}
 {% if step == "send" %}
 <section class="card space-y-4">
-  <h2 class="font-medium text-lg">2 · Send to vendors</h2>
+  <h2 class="font-medium text-lg">Send to vendors</h2>
   <p class="text-sm text-slate-600">Review cover emails, then send. Dispatcher writes stub emails to <code>data/outbox/</code> (SMTP stubbed).</p>
 
   {% if pipe.cover_previews %}
@@ -125,7 +117,15 @@
     {% endfor %}
   </div>
   {% else %}
-  <p class="text-sm text-amber-700">No cover preview yet — ensure vendors exist on the RFx.</p>
+  <div class="empty-hint">
+    No cover preview yet.
+    {% if not rfx.line_items or not rfx.vendors %}
+      Generate an RFx with vendors on the
+      <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=draft">Draft</a> tab first.
+    {% else %}
+      Open this tab after Draft has vendors — previews refresh automatically.
+    {% endif %}
+  </div>
   {% endif %}
 
   {% if not pipe.dispatch_log %}
@@ -146,18 +146,21 @@
     </ul>
     <p class="text-xs text-slate-600 mt-2">{{ pipe.dispatch_paths|length }} outbox file(s) written.</p>
   </div>
-  <form method="post" action="/crew/{{ rfx.rfx_id }}/send/continue">
-    <button class="btn" type="submit">Continue to Inbox →</button>
-  </form>
+  <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=inbox">Open Inbox →</a>
   {% endif %}
-  <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=draft">← Back</a>
+  <div class="flex flex-wrap gap-2">
+    <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=draft">← Draft</a>
+    <form method="post" action="/crew/{{ rfx.rfx_id }}/send/continue">
+      <button class="btn-sec" type="submit">Open Inbox →</button>
+    </form>
+  </div>
 </section>
 {% endif %}
 
 {# ═══════════════ INBOX ═══════════════ #}
 {% if step == "inbox" %}
 <section class="card space-y-4">
-  <h2 class="font-medium text-lg">3 · Inbox / Receive</h2>
+  <h2 class="font-medium text-lg">Inbox / Receive</h2>
   <p class="text-sm text-slate-600">Stub inbound vendor replies. Parse individually or all at once. Uploads supported.</p>
 
   <div class="flex flex-wrap gap-2">
@@ -210,7 +213,16 @@
     </table>
   </div>
   {% else %}
-  <p class="text-sm text-slate-500">No inbox messages yet — seed stub replies from sample vendor files.</p>
+  <div class="empty-hint">
+    No inbox messages yet.
+    <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/seed" class="inline">
+      <button class="underline font-medium" type="submit">Seed stub replies</button>
+    </form>
+    from sample vendor files, or upload below.
+    {% if not pipe.dispatch_log %}
+      (Optional: <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=send">Send</a> first for outbox context.)
+    {% endif %}
+  </div>
   {% endif %}
 
   {% if pipe.quotes %}
@@ -220,24 +232,36 @@
     <li>{{ q.vendor_id }} · {{ q.lines|length }} lines · {{ q.questionnaire_answers|length }} answers · {{ q.source_format }}</li>
     {% endfor %}
   </ul>
-  <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/continue">
-    <button class="btn" type="submit">Continue to Compare →</button>
-  </form>
+  <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">Open Compare →</a>
   {% endif %}
-  <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send">← Back</a>
+  <div class="flex flex-wrap gap-2">
+    <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send">← Send</a>
+    <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/continue">
+      <button class="btn-sec" type="submit">Open Compare →</button>
+    </form>
+  </div>
 </section>
 {% endif %}
 
 {# ═══════════════ COMPARE ═══════════════ #}
 {% if step == "compare" %}
 <section class="card space-y-4">
-  <h2 class="font-medium text-lg">4 · Compare</h2>
+  <h2 class="font-medium text-lg">Compare</h2>
   <p class="text-sm text-slate-600">Normalized INR prices, coverage, and knockout questionnaire pass/fail. Only qualified vendors can be awarded.</p>
 
   {% if not pipe.comparison %}
+  {% if not pipe.quotes %}
+  <div class="empty-hint">
+    Generate an RFx and parse inbox first.
+    <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=draft">Draft</a>
+    ·
+    <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=inbox">Inbox</a>
+  </div>
+  {% else %}
   <form method="post" action="/crew/{{ rfx.rfx_id }}/normalize">
     <button class="btn" type="submit">Build comparison matrix</button>
   </form>
+  {% endif %}
   {% else %}
   {% set cmp = pipe.comparison %}
   <div class="flex flex-wrap gap-2 mb-2">
@@ -356,11 +380,14 @@
   </details>
   {% endif %}
 
-  <form method="post" action="/crew/{{ rfx.rfx_id }}/compare/continue">
-    <button class="btn" type="submit">Continue to Ask →</button>
-  </form>
+  <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=ask">Open Ask →</a>
   {% endif %}
-  <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=inbox">← Back</a>
+  <div class="flex flex-wrap gap-2">
+    <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=inbox">← Inbox</a>
+    <form method="post" action="/crew/{{ rfx.rfx_id }}/compare/continue">
+      <button class="btn-sec" type="submit">Open Ask →</button>
+    </form>
+  </div>
 </section>
 {% endif %}
 
@@ -369,11 +396,11 @@
 <section class="card space-y-4">
   <div class="flex items-start justify-between gap-3">
     <div>
-      <h2 class="font-medium text-lg">5 · Ask Analyst</h2>
+      <h2 class="font-medium text-lg">Ask Analyst</h2>
       <p class="text-sm text-slate-600">Persistent live chat. History stays across questions.</p>
     </div>
     <form method="post" action="/crew/{{ rfx.rfx_id }}/ask/continue">
-      <button class="btn" type="submit">Continue to Award →</button>
+      <button class="btn-sec" type="submit">Open Award →</button>
     </form>
   </div>
 
@@ -393,7 +420,15 @@
       </div>
       {% endfor %}
     {% else %}
+      {% if not pipe.comparison %}
+      <div class="empty-hint">
+        Build a comparison matrix first for grounded answers.
+        <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">Compare</a>
+        (or ask anyway — Analyst will note missing data).
+      </div>
+      {% else %}
       <p class="text-sm text-slate-500">Ask about cheapest qualified split, single-vendor totals, gaps, or an award recommendation.</p>
+      {% endif %}
     {% endif %}
   </div>
 
@@ -411,7 +446,10 @@
            placeholder="e.g. cheapest per line among qualified vendors?" required autocomplete="off" />
     <button class="btn" type="submit">Ask</button>
   </form>
-  <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">← Back</a>
+  <div class="flex flex-wrap gap-2">
+    <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">← Compare</a>
+    <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=award">Open Award →</a>
+  </div>
 </section>
 {% endif %}
 
@@ -420,7 +458,7 @@
 <section class="card space-y-4">
   <div class="flex flex-wrap items-start justify-between gap-3">
     <div>
-      <h2 class="font-medium text-lg">6 · Award</h2>
+      <h2 class="font-medium text-lg">Award</h2>
       <p class="text-sm text-slate-600">Pick a qualified vendor with a price for each line. Dropdowns are filtered to award-eligible vendors.</p>
     </div>
     <div class="flex flex-wrap gap-2 no-print">
@@ -433,6 +471,17 @@
       <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/export.md">Export Markdown</a>
     </div>
   </div>
+
+  {% if not pipe.comparison %}
+  <div class="empty-hint">
+    Generate an RFx and parse inbox, then build Compare first.
+    <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=draft">Draft</a>
+    ·
+    <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=inbox">Inbox</a>
+    ·
+    <a class="underline font-medium" href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">Compare</a>
+  </div>
+  {% else %}
 
   <form method="post" action="/crew/{{ rfx.rfx_id }}/award/save" class="space-y-3">
     <div class="overflow-auto max-h-[28rem] border border-slate-200 rounded-lg">
@@ -492,7 +541,8 @@
     {% endif %}
   </div>
   {% endif %}
-  <a class="btn-sec no-print" href="/crew/{{ rfx.rfx_id }}/wizard?step=ask">← Back</a>
+  {% endif %}
+  <a class="btn-sec no-print" href="/crew/{{ rfx.rfx_id }}/wizard?step=ask">← Ask</a>
 </section>
 {% endif %}
 

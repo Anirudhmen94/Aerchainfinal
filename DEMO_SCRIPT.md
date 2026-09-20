@@ -1,4 +1,4 @@
-# Demo script — RFx Crew (wizard + ugly edges)
+# Demo script — RFx Crew (free tabs + ugly edges)
 
 ~10–12 minutes plus model latency. Stub dispatch / deterministic parse / normalize is near-instant.
 
@@ -11,18 +11,20 @@ python data/fixtures/generate_ugly_edges.py   # refresh binary samples if needed
 uvicorn app_crew:app --port 8518 --reload
 ```
 
-Open http://127.0.0.1:8518 — header shows the live product wizard.
+Open http://127.0.0.1:8518 — header shows the free tabbed workspace.
 `/healthz` should report `"app": "rfx-crew"`.
+Optional: dismiss the home **Quick start** tip (localStorage); it is not a multi-step wizard.
 
 ## 1. Draft (1–2 min)
 
 Home → start with the Chakan snacks / corrugated brief → **Generate line items**.
 Board shows ~30 lines, knockout questionnaire, five vendors. Note `rfx_id`.
+Tabs stay open — jump ahead anytime (empty panels explain what’s missing).
 
 ## 2. Send (1 min)
 
-Cover email previews → **Send to vendors**. Outbox (`data/outbox/`) has one stub
-email per vendor. Nothing hit SMTP.
+Open **Send** (or use Open Send). Cover email previews → **Send to vendors**. Outbox
+(`data/outbox/`) has one stub email per vendor. Nothing hit SMTP.
 
 ## 3. Inbox — ugly edges (2–3 min)
 
@@ -66,7 +68,8 @@ Export **Excel / CSV / Markdown** of the award decision (or Print).
 ## 7. Close (30 s)
 
 `/crew/{id}/snapshot` JSON matches `shared_models`. Point at `DECISIONS.md`: why five
-agents, why FastAPI, why a **new** Vercel URL for `app_crew.py`, how uncertainty is shown.
+agents, why FastAPI, why a **new** Vercel URL for `app_crew.py`, how uncertainty is shown,
+and that navigation is free (not a locked wizard).
 
 ## If asked “is this hardcoded?”
 

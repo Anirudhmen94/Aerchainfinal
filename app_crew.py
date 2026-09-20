@@ -1,4 +1,4 @@
-"""Aerchain RFx Crew — sequential LIVE PRODUCT wizard.
+"""Aerchain RFx Crew — free tabbed workspace (Draft | Send | Inbox | Compare | Ask | Award).
 
 Local:  uvicorn app_crew:app --port 8518 --reload
 Vercel: module-level `app` (see vercel.json).
@@ -56,9 +56,9 @@ def _render(request: Request, name: str, **ctx: Any) -> HTMLResponse:
 
 def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
     step = pipe.wizard_step if pipe.wizard_step in WIZARD_STEPS else "draft"
-    unlocked = pipe.unlocked_steps()
+    unlocked = pipe.unlocked_steps()  # always all tabs
     done = pipe.completion()
-    # Per-line eligible vendors for Award step
+    # Per-line eligible vendors for Award tab
     eligible_by_line: dict[str, list[dict[str, Any]]] = {}
     if pipe.rfx and pipe.comparison:
         for li in pipe.rfx.line_items:
@@ -122,6 +122,7 @@ def healthz():
     return {
         "ok": True,
         "app": "rfx-crew",
+        "tabs": WIZARD_STEPS,
         "wizard": WIZARD_STEPS,
         "agents": [
             "rfx_drafter",
@@ -230,7 +231,7 @@ def api_run_e2e(brief: str = Form(...)):
     )
 
 
-# ── Wizard shell ───────────────────────────────────────────────────────
+# ── Workspace shell (free tabs) ────────────────────────────────────────
 
 
 @app.get("/crew/{rfx_id}", response_class=HTMLResponse)
@@ -244,11 +245,8 @@ def crew_wizard(request: Request, rfx_id: str, step: Optional[str] = None):
     if not pipe.rfx:
         return HTMLResponse("RFx not found", status_code=404)
     if step and step in WIZARD_STEPS:
-        try:
-            pipe.set_wizard_step(step)
-            _save(pipe)
-        except RuntimeError:
-            pass  # stay on current if locked
+        pipe.set_wizard_step(step)
+        _save(pipe)
     ctx = _wizard_ctx(pipe)
     return _render(request, "crew/wizard.html", **ctx)
 
@@ -258,11 +256,10 @@ def crew_wizard_goto(rfx_id: str, step: str = Form(...)):
     pipe = _session(rfx_id)
     if not pipe.rfx:
         return HTMLResponse("RFx not found", status_code=404)
-    try:
-        pipe.set_wizard_step(step)
-        _save(pipe)
-    except Exception as exc:
-        return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
+    if step not in WIZARD_STEPS:
+        return HTMLResponse(f"<div class='err'>Unknown tab: {step}</div>", status_code=400)
+    pipe.set_wizard_step(step)
+    _save(pipe)
     return RedirectResponse(f"/crew/{rfx_id}/wizard?step={pipe.wizard_step}", status_code=303)
 
 
@@ -276,7 +273,7 @@ def crew_wizard_next(rfx_id: str):
     return RedirectResponse(f"/crew/{rfx_id}/wizard?step={pipe.wizard_step}", status_code=303)
 
 
-# ── Draft step ─────────────────────────────────────────────────────────
+# ── Draft tab ──────────────────────────────────────────────────────────
 
 
 @app.post("/crew/{rfx_id}/draft/fields", response_class=HTMLResponse)
@@ -361,21 +358,21 @@ async def crew_draft_lines(request: Request, rfx_id: str):
 
 @app.post("/crew/{rfx_id}/draft/continue", response_class=HTMLResponse)
 def crew_draft_continue(rfx_id: str):
+    """Soft jump to Send (tabs are free; prep cover previews when possible)."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
         return HTMLResponse("RFx not found", status_code=404)
-    if not pipe.rfx.line_items:
-        return HTMLResponse(
-            "<div class='err'>Generate line items before continuing.</div>",
-            status_code=400,
-        )
-    pipe.refresh_cover_previews()
+    if pipe.rfx.line_items:
+        try:
+            pipe.refresh_cover_previews()
+        except Exception:
+            pass
     pipe.set_wizard_step("send")
     _save(pipe)
     return RedirectResponse(f"/crew/{rfx_id}/wizard?step=send", status_code=303)
 
 
-# ── Send step ──────────────────────────────────────────────────────────
+# ── Send tab ───────────────────────────────────────────────────────────
 
 
 @app.post("/crew/{rfx_id}/dispatch", response_class=HTMLResponse)
@@ -393,20 +390,21 @@ def crew_dispatch(request: Request, rfx_id: str):
 
 @app.post("/crew/{rfx_id}/send/continue", response_class=HTMLResponse)
 def crew_send_continue(rfx_id: str):
+    """Soft jump to Inbox (optional seed after dispatch)."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
         return HTMLResponse("RFx not found", status_code=404)
-    if not pipe.dispatch_log:
-        return HTMLResponse(
-            "<div class='err'>Send to vendors before continuing.</div>", status_code=400
-        )
-    pipe.seed_inbox()
+    if pipe.dispatch_log and not pipe.inbox:
+        try:
+            pipe.seed_inbox()
+        except Exception:
+            pass
     pipe.set_wizard_step("inbox")
     _save(pipe)
     return RedirectResponse(f"/crew/{rfx_id}/wizard?step=inbox", status_code=303)
 
 
-# ── Inbox step ─────────────────────────────────────────────────────────
+# ── Inbox tab ──────────────────────────────────────────────────────────
 
 
 @app.post("/crew/{rfx_id}/inbox/seed", response_class=HTMLResponse)
@@ -471,18 +469,15 @@ async def crew_inbox_upload(
 
 @app.post("/crew/{rfx_id}/inbox/continue", response_class=HTMLResponse)
 def crew_inbox_continue(rfx_id: str):
+    """Soft jump to Compare; build matrix only when quotes exist."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
         return HTMLResponse("RFx not found", status_code=404)
-    if not pipe.quotes:
-        return HTMLResponse(
-            "<div class='err'>Parse at least one vendor reply before continuing.</div>",
-            status_code=400,
-        )
-    try:
-        pipe.normalize()
-    except Exception as exc:
-        return HTMLResponse(f"<div class='err'>Normalize failed: {exc}</div>", status_code=400)
+    if pipe.quotes and not pipe.comparison:
+        try:
+            pipe.normalize()
+        except Exception:
+            pass  # empty Compare tab explains what's missing
     pipe.set_wizard_step("compare")
     _save(pipe)
     return RedirectResponse(f"/crew/{rfx_id}/wizard?step=compare", status_code=303)
@@ -516,7 +511,7 @@ async def crew_ingest(
     return RedirectResponse(f"/crew/{rfx_id}/wizard?step=inbox", status_code=303)
 
 
-# ── Compare step ───────────────────────────────────────────────────────
+# ── Compare tab ────────────────────────────────────────────────────────
 
 
 @app.post("/crew/{rfx_id}/normalize", response_class=HTMLResponse)
@@ -534,20 +529,21 @@ def crew_normalize(request: Request, rfx_id: str):
 
 @app.post("/crew/{rfx_id}/compare/continue", response_class=HTMLResponse)
 def crew_compare_continue(rfx_id: str):
+    """Soft jump to Ask (no hard gate)."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
         return HTMLResponse("RFx not found", status_code=404)
-    if not pipe.comparison:
+    if pipe.quotes and not pipe.comparison:
         try:
             pipe.normalize()
-        except Exception as exc:
-            return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
+        except Exception:
+            pass
     pipe.set_wizard_step("ask")
     _save(pipe)
     return RedirectResponse(f"/crew/{rfx_id}/wizard?step=ask", status_code=303)
 
 
-# ── Ask step ───────────────────────────────────────────────────────────
+# ── Ask tab ────────────────────────────────────────────────────────────
 
 
 @app.post("/crew/{rfx_id}/ask", response_class=HTMLResponse)
@@ -573,18 +569,16 @@ def crew_ask(request: Request, rfx_id: str, question: str = Form(...)):
 
 @app.post("/crew/{rfx_id}/ask/continue", response_class=HTMLResponse)
 def crew_ask_continue(rfx_id: str):
+    """Soft jump to Award (tabs are free)."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
         return HTMLResponse("RFx not found", status_code=404)
-    # Visiting ask unlocks award
-    pipe.wizard_step = "ask"
-    pipe._persist()
     pipe.set_wizard_step("award")
     _save(pipe)
     return RedirectResponse(f"/crew/{rfx_id}/wizard?step=award", status_code=303)
 
 
-# ── Award step ─────────────────────────────────────────────────────────
+# ── Award tab ──────────────────────────────────────────────────────────
 
 
 @app.post("/crew/{rfx_id}/award/save", response_class=HTMLResponse)

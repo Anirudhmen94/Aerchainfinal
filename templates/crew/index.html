@@ -1,13 +1,21 @@
 {% extends "crew/base.html" %}
 {% block title %}Start · RFx Crew{% endblock %}
 {% block content %}
+<div id="quick-start" class="mb-6 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-950 flex flex-wrap items-start justify-between gap-3 hidden">
+  <div>
+    <div class="font-medium mb-1">Quick start</div>
+    <p class="text-indigo-900/80">Open any tab anytime — Draft → generate lines, Send → outbox, Inbox → parse, Compare → matrix, Ask → chat, Award → decisions. Nothing is locked.</p>
+  </div>
+  <button type="button" class="btn-sec text-xs py-1" id="qs-dismiss">Dismiss</button>
+</div>
+
 <section class="grid md:grid-cols-5 gap-6">
   <div class="md:col-span-3 card">
     <h1 class="text-2xl font-semibold mb-2">Start a sourcing event</h1>
     <p class="text-slate-600 text-sm mb-4">
-      Walk the buyer workflow step by step:
-      <strong>Draft → Send → Inbox → Compare → Ask → Award</strong>.
-      Each step unlocks only when the previous one is complete.
+      Free tabbed workspace:
+      <strong>Draft | Send | Inbox | Compare | Ask | Award</strong>.
+      Jump to any tab — empty panels explain what’s missing.
     </p>
     <form method="post" action="/crew/start" class="space-y-3" id="start-form">
       <label class="block text-sm font-medium">Brief</label>
@@ -23,7 +31,7 @@
         </div>
       </div>
       <input type="hidden" name="scope" value="" />
-      <button class="btn" type="submit">Open Draft wizard</button>
+      <button class="btn" type="submit">Open workspace</button>
     </form>
     <p class="mt-4 text-xs text-slate-500">
       Optional:
@@ -32,7 +40,7 @@
     <form method="post" action="/crew/run-e2e" class="mt-3 hidden space-y-2" id="e2e-form">
       <textarea name="brief" rows="4" class="w-full rounded-lg border border-slate-300 p-3 text-sm">{{ example_brief }}</textarea>
       <button class="btn-sec" type="submit" id="e2e-btn">Run full end-to-end demo</button>
-      <p class="text-xs text-slate-500">One-shot all agents (~1–3 min with Claude). Prefer the sequential wizard for real demos.</p>
+      <p class="text-xs text-slate-500">One-shot all agents (~1–3 min with Claude). Prefer free tabs for real demos.</p>
     </form>
   </div>
   <div class="md:col-span-2 space-y-4">
@@ -43,7 +51,7 @@
         {% for e in events %}
         <li>
           <a class="text-indigo-600 hover:underline" href="/crew/{{ e.id }}/wizard">{{ e.title }}</a>
-          <div class="text-xs text-slate-500">{{ e.id }} · {{ e.step }} · {{ e.vendors }} vendors</div>
+          <div class="text-xs text-slate-500">{{ e.id }} · tab {{ e.step }} · {{ e.vendors }} vendors</div>
         </li>
         {% endfor %}
       </ul>
@@ -52,9 +60,9 @@
       {% endif %}
     </div>
     <div class="card text-sm text-slate-600">
-      <h2 class="font-medium text-slate-900 mb-2">Wizard steps</h2>
+      <h2 class="font-medium text-slate-900 mb-2">Workspace tabs</h2>
       <ol class="list-decimal list-inside space-y-1">
-        <li>Draft — brief, fields, 30 line items</li>
+        <li>Draft — brief, fields, line items</li>
         <li>Send — preview cover email → outbox</li>
         <li>Inbox — stub replies → parse</li>
         <li>Compare — INR matrix + knockouts</li>
@@ -65,6 +73,19 @@
   </div>
 </section>
 <script>
+  (function () {
+    var key = 'aerchain_qs_dismissed';
+    var el = document.getElementById('quick-start');
+    var btn = document.getElementById('qs-dismiss');
+    if (!el) return;
+    try {
+      if (!localStorage.getItem(key)) el.classList.remove('hidden');
+    } catch (e) { el.classList.remove('hidden'); }
+    btn && btn.addEventListener('click', function () {
+      el.classList.add('hidden');
+      try { localStorage.setItem(key, '1'); } catch (e) {}
+    });
+  })();
   document.getElementById('e2e-form')?.addEventListener('submit', function () {
     const b = document.getElementById('e2e-btn');
     if (b) { b.disabled = true; b.textContent = 'Running full crew…'; }
