@@ -680,6 +680,42 @@ def _haiku_vision(*, path: Path, system: str, user_text: str) -> tuple[str, str]
     raise RuntimeError(f"No usable Haiku vision model from {_candidate_models()}: {last_err}")
 
 
+
+def _safe_json_loads(raw: str) -> dict[str, Any]:
+    """Parse model JSON; tolerate fences and truncated strings without crashing Parse all."""
+    cleaned = _strip_json_fence(raw).strip()
+    if not cleaned:
+        raise ValueError("empty model JSON")
+    try:
+        data = json.loads(cleaned)
+        if isinstance(data, dict):
+            return data
+        raise ValueError(f"expected JSON object, got {type(data).__name__}")
+    except json.JSONDecodeError as first:
+        # Attempt common repairs for truncated Claude output
+        repaired = cleaned
+        # close open string + object/array
+        if repaired.count('"') % 2 == 1:
+            repaired += '"'
+        # trim trailing incomplete key fragments after last comma
+        for closer in ('}', ']'):
+            candidate = repaired
+            # balance braces/brackets roughly
+            opens = candidate.count('{') - candidate.count('}')
+            opens_a = candidate.count('[') - candidate.count(']')
+            candidate = candidate + (']' * max(0, opens_a)) + ('}' * max(0, opens))
+            try:
+                data = json.loads(candidate)
+                if isinstance(data, dict):
+                    data.setdefault("notes", "")
+                    data["notes"] = (str(data.get("notes") or "") + " | json_repaired_truncated").strip(" |")
+                    data["confidence"] = min(float(data.get("confidence") or 0.4), 0.45)
+                    return data
+            except json.JSONDecodeError:
+                continue
+        raise first
+
+
 def _call_haiku_text(document_text: str, rfx_ctx: dict[str, Any], *, source_name: str) -> dict[str, Any]:
     user_payload = {
         "source_file": source_name,
@@ -694,9 +730,9 @@ def _call_haiku_text(document_text: str, rfx_ctx: dict[str, Any], *, source_name
     raw, model_used = _haiku_complete(
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
-        max_tokens=4096,
+        max_tokens=8192,
     )
-    parsed = json.loads(_strip_json_fence(raw))
+    parsed = _safe_json_loads(raw)
     parsed["_model_used"] = model_used
     return parsed
 
@@ -708,7 +744,7 @@ def _call_haiku_image(path: Path, rfx_ctx: dict[str, Any]) -> dict[str, Any]:
         + json.dumps({"source_file": path.name, "rfx": rfx_ctx}, ensure_ascii=False)
     )
     raw, model_used = _haiku_vision(path=path, system=SYSTEM_PROMPT, user_text=user_text)
-    parsed = json.loads(_strip_json_fence(raw))
+    parsed = _safe_json_loads(raw)
     parsed["_model_used"] = model_used
     return parsed
 
@@ -1037,7 +1073,26 @@ def parse_all(
             allow_soft = {re.sub(r"^V0+", "V", a) for a in allow}
             if vid.upper() not in allow and soft not in allow_soft:
                 continue
-        out.append(parse_response(path, vid, rfx))
+        try:
+            out.append(parse_response(path, vid, rfx))
+        except Exception as exc:  # noqa: BLE001 — one bad file must not fail the batch
+            out.append(
+                _quote(
+                    vendor_id=vid or "UNKNOWN",
+                    source_format=suffix.lstrip(".") or "unknown",
+                    lines=[],
+                    questionnaire_answers=[],
+                    notes=f"parse_failed: {exc}",
+                    confidence=0.0,
+                    raw_evidence=_meta_evidence(
+                        path,
+                        parse_method="parse_all_error",
+                        vendor_name="",
+                        currency="",
+                        extraction_notes=str(exc),
+                    ),
+                )
+            )
     return out
 
 
