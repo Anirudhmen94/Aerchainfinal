@@ -330,124 +330,6 @@
   </div>
   {% endif %}
 
-  <details class="text-sm mb-3" open>
-    <summary class="cursor-pointer font-medium">Knockout questionnaire comparison</summary>
-    <p class="text-xs text-slate-500 mt-1 mb-2">Same layout as pricing: questions × vendors. Chart = Pass (1) vs Fail/Unanswered (0) per KO question.</p>
-
-    {% if ko_matrix %}
-    <div class="ko-chart-wrap">
-      <canvas id="ko-pass-chart" aria-label="Knockout pass/fail by vendor"></canvas>
-    </div>
-    <div class="overflow-auto max-h-[18rem] border border-slate-200 rounded-lg mb-2">
-      <table class="matrix w-full">
-        <thead class="bg-slate-50 sticky top-0">
-          <tr>
-            <th class="text-left">Knockout question</th>
-            {% for vid in ko_matrix[0].by_vendor.keys() %}
-            <th>{{ ko_matrix[0].by_vendor[vid].vendor_name or vid }}</th>
-            {% endfor %}
-          </tr>
-        </thead>
-        <tbody>
-        {% for row in ko_matrix %}
-          <tr>
-            <td class="text-left max-w-[16rem]">
-              <div class="font-medium flex items-center gap-1 flex-wrap">
-                {{ row.question_id }} <span class="ko-badge">KO</span>
-              </div>
-              <div class="text-slate-500 text-[11px] leading-snug">{{ row.question }}</div>
-            </td>
-            {% for vid, cell in row.by_vendor.items() %}
-            <td class="q-cell q-{{ cell.status }}">
-              {% if cell.status == 'pass' %}
-                <span class="chip chip-ok">Pass</span>
-              {% elif cell.status == 'fail' %}
-                <span class="chip chip-bad">Fail</span>
-              {% else %}
-                <span class="chip">Unanswered</span>
-              {% endif %}
-              <div class="text-[10px] text-slate-500 truncate max-w-[7rem]" title="{{ cell.answer or '' }}">{% if cell.answer %}{{ cell.answer }}{% else %}—{% endif %}</div>
-            </td>
-            {% endfor %}
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <script>
-    (function(){
-      if (typeof Chart === 'undefined') return;
-      var canvas = document.getElementById('ko-pass-chart');
-      if (!canvas || canvas.dataset.ready) return;
-      canvas.dataset.ready = '1';
-      var labels = {{ ko_matrix|map(attribute='question_id')|list|tojson }};
-      var vendorIds = {{ ko_matrix[0].by_vendor.keys()|list|tojson }};
-      var vendorNames = {};
-      {% for vid, cell in ko_matrix[0].by_vendor.items() %}
-      vendorNames[{{ vid|tojson }}] = {{ (cell.vendor_name or vid)|tojson }};
-      {% endfor %}
-      var colors = ['#4f46e5','#059669','#d97706','#db2777','#0ea5e9','#7c3aed'];
-      var datasets = vendorIds.map(function(vid, i){
-        var data = [];
-        {% for row in ko_matrix %}
-        (function(){
-          var cell = {{ row.by_vendor|tojson }}[vid];
-          data.push(cell && cell.status === 'pass' ? 1 : 0);
-        })();
-        {% endfor %}
-        // rebuild data in JS from embedded matrix to avoid Jinja loop confusion
-        return {
-          label: vendorNames[vid] || vid,
-          data: [],
-          backgroundColor: colors[i % colors.length],
-          borderRadius: 4,
-          maxBarThickness: 28
-        };
-      });
-      // Fill dataset data from a flat status grid
-      var statusGrid = [
-        {% for row in ko_matrix %}
-        {
-          {% for vid, cell in row.by_vendor.items() %}
-          {{ vid|tojson }}: {{ cell.status|tojson }},
-          {% endfor %}
-        },
-        {% endfor %}
-      ];
-      datasets.forEach(function(ds, i){
-        var vid = vendorIds[i];
-        ds.data = statusGrid.map(function(row){ return row[vid] === 'pass' ? 1 : 0; });
-      });
-      new Chart(canvas.getContext('2d'), {
-        type: 'bar',
-        data: { labels: labels, datasets: datasets },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            y: {
-              min: 0, max: 1, ticks: { stepSize: 1, callback: function(v){ return v === 1 ? 'Pass' : 'Fail'; } },
-              title: { display: true, text: 'Knockout result' }
-            },
-            x: { title: { display: true, text: 'Knockout questions' } }
-          },
-          plugins: {
-            legend: { position: 'bottom' },
-            tooltip: {
-              callbacks: {
-                label: function(ctx){
-                  return ctx.dataset.label + ': ' + (ctx.parsed.y === 1 ? 'Pass' : 'Fail / unanswered');
-                }
-              }
-            }
-          }
-        }
-      });
-    })();
-    </script>
-    {% else %}
-    <p class="text-xs text-amber-700">Build the comparison matrix after Parse all to see knockout Pass/Fail by vendor.</p>
-    {% endif %}
   </details>
 
   <div class="flex flex-wrap gap-2 text-[11px] mb-2">
@@ -514,8 +396,8 @@
 
   {% if q_matrix %}
   <div class="mt-4 mb-2">
-    <h3 class="font-medium text-sm mb-1">Full questionnaire comparison ({{ q_matrix|length }} questions × vendors)</h3>
-    <p class="text-xs text-slate-500 mb-2">All RFx questionnaire rows — not only knockouts. KO badge marks gate questions. Cells = Pass / Fail / Unanswered + answer text (same idea as the price matrix).</p>
+    <h3 class="font-medium text-sm mb-1">Questionnaire comparison ({{ q_matrix|length }} questions × vendors)</h3>
+    <p class="text-xs text-slate-500 mb-2">Questions × vendors. KO badge = knockout gate. Cells = Pass / Fail / Unanswered + answer text.</p>
     <div class="overflow-auto max-h-[22rem] border border-slate-200 rounded-lg">
       <table class="matrix w-full">
         <thead class="bg-slate-50 sticky top-0">
