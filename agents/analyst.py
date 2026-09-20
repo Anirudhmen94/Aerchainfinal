@@ -14,7 +14,7 @@ from typing import Any, Optional, Union
 
 from shared_models import ComparisonTable, NormalizedCell, RFx
 
-DEFAULT_MODEL = "claude-3-5-sonnet-20240620"
+DEFAULT_MODEL = "claude-sonnet-4-5"
 DEFAULT_USD_RATE = 83.50
 USABLE_STATUSES = frozenset({"ok", "converted"})
 
@@ -23,7 +23,11 @@ RFxLike = Union[RFx, dict[str, Any], None]
 
 
 def _model_name() -> str:
-    return os.environ.get("ANTHROPIC_SONNET_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    return (
+        os.environ.get("ANTHROPIC_SONNET_MODEL")
+        or os.environ.get("ANTHROPIC_MODEL")
+        or DEFAULT_MODEL
+    ).strip() or DEFAULT_MODEL
 
 
 def _cell_as_dict(cell: Any) -> dict[str, Any]:

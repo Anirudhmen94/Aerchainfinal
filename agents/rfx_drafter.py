@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from shared_models import LineItem, QuestionnaireItem, RFx, Vendor
 
-DEFAULT_HAIKU_MODEL = "claude-3-haiku-20240307"
+DEFAULT_HAIKU_MODEL = "claude-haiku-4-5-20251001"
 
 
 def infer_line_count(brief: str, *, default: int = 30, minimum: int = 1, maximum: int = 60) -> int:
@@ -192,7 +192,11 @@ def nominal_weight_g(length_mm: int, width_mm: int, height_mm: int, gsm: int) ->
 
 
 def _haiku_model() -> str:
-    return os.environ.get("ANTHROPIC_HAIKU_MODEL") or DEFAULT_HAIKU_MODEL
+    return (
+        os.environ.get("ANTHROPIC_HAIKU_MODEL")
+        or os.environ.get("ANTHROPIC_MODEL")
+        or DEFAULT_HAIKU_MODEL
+    ).strip() or DEFAULT_HAIKU_MODEL
 
 
 def _require_api_key() -> str:

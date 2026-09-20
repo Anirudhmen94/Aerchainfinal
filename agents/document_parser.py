@@ -18,18 +18,21 @@ from typing import Any, Literal, Optional, Union
 from shared_models import ExtractedQuote, RFx
 
 _HAIKU_FALLBACKS = [
-    "claude-3-haiku-20240307",
     "claude-haiku-4-5-20251001",
     "claude-3-5-haiku-20241022",
+    "claude-3-haiku-20240307",
 ]
 
 
 def _resolve_haiku_model() -> str:
-    preferred = os.environ.get("ANTHROPIC_HAIKU_MODEL", "").strip()
+    preferred = (
+        os.environ.get("ANTHROPIC_HAIKU_MODEL", "").strip()
+        or os.environ.get("ANTHROPIC_MODEL", "").strip()
+    )
     for c in [preferred, *_HAIKU_FALLBACKS]:
         if c:
             return c
-    return "claude-3-haiku-20240307"
+    return "claude-haiku-4-5-20251001"
 
 
 HAIKU_MODEL = _resolve_haiku_model()
