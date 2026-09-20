@@ -467,6 +467,23 @@
 
   <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=ask">Open Ask →</a>
   {% endif %}
+  {% if review_log %}
+  <div class="rounded-lg border border-slate-200 bg-white no-print">
+    <div class="px-4 py-2 border-b border-slate-200 font-medium text-sm">Review log <span class="chip">{{ review_log|length }}</span></div>
+    <ul class="divide-y divide-slate-100 text-xs max-h-40 overflow-auto">
+      {% for e in review_log|reverse %}
+      {% if loop.index <= 8 %}
+      <li class="px-4 py-1.5">
+        <span class="text-slate-500">{{ e.time[:16].replace('T',' ') }}</span>
+        · <span class="chip chip-info">{{ e.action }}</span>
+        {% if e.detail %}<span class="text-slate-600">{{ e.detail }}</span>{% endif %}
+      </li>
+      {% endif %}
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
   <div class="flex flex-wrap gap-2">
     <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=inbox">← Inbox</a>
     <form method="post" action="/crew/{{ rfx.rfx_id }}/compare/continue">
@@ -545,13 +562,19 @@
 <section class="card space-y-4">
   <div class="flex flex-wrap items-start justify-between gap-3">
     <div>
-      <h2 class="font-medium text-lg">Award</h2>
-      <p class="text-sm text-slate-600">Pick a qualified vendor with a price for each line. Dropdowns are filtered to award-eligible vendors.</p>
+      <h2 class="font-medium text-lg">Award
+        {% if is_frozen and freeze %}
+        <span class="chip chip-ok align-middle ml-1" title="Frozen at {{ freeze.timestamp }}">Frozen · {{ freeze.freeze_id }}</span>
+        {% endif %}
+      </h2>
+      <p class="text-sm text-slate-600">Pick a qualified vendor with a price for each line. Dropdowns are filtered to award-eligible vendors.{% if is_frozen %} <span class="text-indigo-700 font-medium">Frozen — unfreeze to edit.</span>{% endif %}</p>
     </div>
     <div class="flex flex-wrap gap-2 no-print">
+      {% if not is_frozen %}
       <form method="post" action="/crew/{{ rfx.rfx_id }}/award/suggest">
         <button class="btn-sec" type="submit">Suggest cheapest split</button>
       </form>
+      {% endif %}
       <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/print" target="_blank">Print</a>
       <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/export.xlsx">Export Excel</a>
       <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/export.csv">Export CSV</a>
@@ -613,7 +636,8 @@
             </td>
             <td class="text-right tabular-nums">{{ li.qty }}</td>
             <td>
-              <select name="award_{{ li.line_id }}" class="w-full rounded border border-slate-300 text-xs px-2 py-1">
+              <select name="award_{{ li.line_id }}" class="w-full rounded border border-slate-300 text-xs px-2 py-1"
+                      {% if is_frozen %}disabled{% endif %}>
                 <option value="">— none —</option>
                 {% for e in elig %}
                 <option value="{{ e.vendor_id }}" {% if e.vendor_id == current %}selected{% endif %}>
@@ -631,8 +655,38 @@
         </tbody>
       </table>
     </div>
+    {% if not is_frozen %}
     <button class="btn" type="submit">Save award decisions</button>
+    {% else %}
+    <p class="text-xs text-slate-500">Dropdowns are read-only while frozen.</p>
+    {% endif %}
   </form>
+
+  {% if pipe.awards %}
+  <div class="rounded-lg border border-indigo-200 bg-white p-4 space-y-2 no-print">
+    <div class="font-medium text-sm">Freeze award (assignment trust)</div>
+    <p class="text-xs text-slate-600">Snapshots awards, totals, Pass shortlist, and comparison version. While frozen, line awards cannot change until you Unfreeze (logged).</p>
+    {% if not is_frozen %}
+    <form method="post" action="/crew/{{ rfx.rfx_id }}/award/freeze" class="flex flex-wrap items-end gap-2">
+      <label class="text-xs text-slate-600">Note (optional)
+        <input name="note" class="mt-0.5 block rounded border border-slate-300 px-2 py-1 text-xs min-w-[14rem]" placeholder="e.g. VP-ready split" />
+      </label>
+      <button class="btn" type="submit">Freeze award</button>
+    </form>
+    {% else %}
+    <div class="flex flex-wrap items-center gap-2 text-sm">
+      <span class="chip chip-ok">Frozen · {{ freeze.freeze_id }}</span>
+      <span class="text-xs text-slate-500">{{ freeze.timestamp[:19].replace('T',' ') }} UTC · {{ freeze.totals.lines_awarded }} lines · ₹{{ '%.2f'|format(freeze.totals.total_inr or 0) }}</span>
+    </div>
+    <form method="post" action="/crew/{{ rfx.rfx_id }}/award/unfreeze" class="flex flex-wrap items-end gap-2">
+      <label class="text-xs text-slate-600">Unfreeze note (optional)
+        <input name="note" class="mt-0.5 block rounded border border-slate-300 px-2 py-1 text-xs min-w-[14rem]" placeholder="reason for reopen" />
+      </label>
+      <button class="btn-sec" type="submit">Unfreeze</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
 
   {% if award_summary %}
   <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-4">
@@ -679,6 +733,29 @@
     {% endif %}
   </div>
   {% endif %}
+
+  <div class="rounded-lg border border-slate-200 bg-white no-print">
+    <div class="px-4 py-3 border-b border-slate-200 font-medium text-sm flex items-center justify-between">
+      <span>Review log</span>
+      <span class="chip">{{ review_log|length }}</span>
+    </div>
+    {% if review_log %}
+    <ul class="divide-y divide-slate-100 text-xs max-h-56 overflow-auto">
+      {% for e in review_log|reverse %}
+      <li class="px-4 py-2">
+        <div class="flex flex-wrap gap-2 items-baseline">
+          <span class="text-slate-500 tabular-nums">{{ e.time[:19].replace('T',' ') }} UTC</span>
+          <span class="chip chip-info">{{ e.action }}</span>
+          <span class="text-slate-400">{{ e.actor or 'buyer' }}</span>
+        </div>
+        {% if e.detail %}<div class="text-slate-700 mt-0.5">{{ e.detail }}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="px-4 py-3 text-xs text-slate-500">No events yet — save, freeze, unfreeze, notices, or cell overrides appear here.</p>
+    {% endif %}
+  </div>
 
   <a class="btn-sec no-print" href="/crew/{{ rfx.rfx_id }}/wizard?step=ask">← Ask</a>
 </section>

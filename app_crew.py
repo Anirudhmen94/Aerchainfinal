@@ -179,6 +179,9 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "shortlist_fail": shortlist_fail,
         "award_notice_paths": list(getattr(pipe, "award_notice_paths", None) or []),
         "q_matrix": q_matrix,
+        "freeze": getattr(pipe, "freeze", None),
+        "is_frozen": bool(getattr(pipe, "freeze", None)),
+        "review_log": list(getattr(pipe, "review_log", None) or []),
     }
 
 
@@ -719,6 +722,70 @@ def crew_award_notify(request: Request, rfx_id: str):
     return RedirectResponse(
         f"/crew/{rfx_id}/wizard?step=award&notices={len(paths)}",
         status_code=303,
+    )
+
+
+@app.post("/crew/{rfx_id}/award/freeze", response_class=HTMLResponse)
+async def crew_award_freeze(request: Request, rfx_id: str):
+    """Persist freeze snapshot; lock award dropdowns until unfreeze."""
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    form = await request.form()
+    note = str(form.get("note") or "").strip()
+    try:
+        pipe.freeze_award(note=note)
+    except Exception as exc:
+        return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=award", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/award/unfreeze", response_class=HTMLResponse)
+async def crew_award_unfreeze(request: Request, rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    form = await request.form()
+    note = str(form.get("note") or "").strip()
+    try:
+        pipe.unfreeze_award(note=note)
+    except Exception as exc:
+        return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=award", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/review/override", response_class=HTMLResponse)
+async def crew_cell_override(request: Request, rfx_id: str):
+    """Cheap cell override — appends review_log only (no cell status mutation)."""
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    form = await request.form()
+    line_id = str(form.get("line_id") or "").strip()
+    vendor_id = str(form.get("vendor_id") or "").strip()
+    note = str(form.get("note") or "").strip()
+    try:
+        pipe.log_cell_override(line_id, vendor_id, note)
+    except Exception as exc:
+        return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
+    _save(pipe)
+    # Refresh evidence drawer if HTMX, else back to compare
+    hx = request.headers.get("HX-Request")
+    if hx:
+        payload = pipe.evidence_for_cell(line_id, vendor_id)
+        return _render(
+            request,
+            "crew/partials/evidence_drawer.html",
+            pipe=pipe,
+            rfx=pipe.rfx,
+            evidence=payload,
+            review_log=list(pipe.review_log or []),
+            override_ok=True,
+        )
+    return RedirectResponse(
+        f"/crew/{rfx_id}/wizard?step=compare", status_code=303
     )
 
 

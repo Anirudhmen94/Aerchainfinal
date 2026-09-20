@@ -92,6 +92,8 @@ class RFxPipeline:
         self.awards: dict[str, str] = {}
         self.award_validation: dict[str, Any] = {}
         self.award_notice_paths: list[str] = []
+        self.freeze: Optional[dict[str, Any]] = None
+        self.review_log: list[dict[str, Any]] = []
         self.step: str = "idle"
         self.wizard_step: str = "draft"
 
@@ -517,9 +519,118 @@ class RFxPipeline:
         out.sort(key=lambda r: (r["unit_price_inr"] is None, r["unit_price_inr"] or 0))
         return out
 
+    def _now_iso(self) -> str:
+        return datetime.now(timezone.utc).isoformat()
+
+    def append_review_log(
+        self,
+        action: str,
+        detail: str = "",
+        *,
+        actor: str = "buyer",
+        persist: bool = True,
+    ) -> dict[str, Any]:
+        """Append-only assignment-trust event (freeze / save / notices / override)."""
+        entry = {
+            "time": self._now_iso(),
+            "action": action,
+            "detail": detail or "",
+            "actor": actor or "buyer",
+        }
+        self.review_log.append(entry)
+        if persist:
+            self._persist()
+        return entry
+
+    @property
+    def is_frozen(self) -> bool:
+        return bool(self.freeze)
+
+    def freeze_award(self, note: str = "") -> dict[str, Any]:
+        """Snapshot awards + shortlist Pass vendors; lock dropdowns until unfreeze."""
+        if not self.rfx:
+            raise RuntimeError("No RFx loaded.")
+        if not self.awards:
+            raise RuntimeError("Save awards before freezing.")
+        if self.freeze:
+            raise RuntimeError("Award is already frozen.")
+        summary = self.award_summary()
+        pass_vendors: list[dict[str, Any]] = []
+        try:
+            for row in self.shortlist():
+                if row.get("pass"):
+                    pass_vendors.append(
+                        {
+                            "vendor_id": row.get("vendor_id"),
+                            "name": row.get("name"),
+                            "coverage": row.get("coverage"),
+                        }
+                    )
+        except Exception:
+            pass_vendors = []
+        freeze_id = f"FZ-{uuid.uuid4().hex[:8].upper()}"
+        snap = {
+            "freeze_id": freeze_id,
+            "rfx_id": self.rfx.rfx_id,
+            "awards": dict(self.awards),
+            "totals": {
+                "total_inr": summary.get("total_inr") or 0.0,
+                "by_vendor": summary.get("by_vendor") or {},
+                "lines_awarded": len(self.awards),
+            },
+            "timestamp": self._now_iso(),
+            "shortlist_pass": pass_vendors,
+            "comparison_version": {
+                "wizard_step": self.wizard_step,
+                "step": self.step,
+                "cell_count": len(self.comparison.cells) if self.comparison else 0,
+                "eligible": list(self.qualified_vendor_ids()),
+            },
+            "note": (note or "").strip(),
+        }
+        self.freeze = snap
+        detail = f"{freeze_id} · {len(self.awards)} lines · ₹{summary.get('total_inr') or 0:.2f}"
+        if note:
+            detail = f"{detail} — {note.strip()}"
+        self.append_review_log("freeze", detail, persist=False)
+        self.wizard_step = "award"
+        self._persist()
+        return snap
+
+    def unfreeze_award(self, note: str = "") -> None:
+        if not self.freeze:
+            raise RuntimeError("Award is not frozen.")
+        fid = self.freeze.get("freeze_id", "")
+        detail = f"Unfroze {fid}".strip()
+        if note:
+            detail = f"{detail} — {note.strip()}"
+        self.freeze = None
+        self.append_review_log("unfreeze", detail, persist=False)
+        self.wizard_step = "award"
+        self._persist()
+
+    def log_cell_override(
+        self,
+        line_id: str,
+        vendor_id: str,
+        note: str,
+        *,
+        status_note: str = "",
+    ) -> dict[str, Any]:
+        """Cheap override: review_log only (cell model has no reviewed status)."""
+        note = (note or "").strip()
+        if not note:
+            raise RuntimeError("Override requires a note.")
+        detail = f"{line_id}/{vendor_id}: {note}"
+        if status_note:
+            detail = f"{detail} ({status_note})"
+        return self.append_review_log("cell_override", detail)
+
     def save_awards(self, awards: dict[str, str]) -> dict[str, Any]:
         if not self.comparison or not self.rfx:
             raise RuntimeError("Compare quotes before awarding.")
+        if self.is_frozen:
+            raise RuntimeError("Award is frozen — unfreeze before editing.")
         result = validate_award(
             self.comparison,
             qualifications=self.qualified_vendor_ids(),
@@ -536,12 +647,23 @@ class RFxPipeline:
         self.award_validation = result
         self.step = "awarded"
         self.wizard_step = "award"
+        n = len(cleaned)
+        total = (result.get("totals") or {}).get("grand_total_inr") or (
+            result.get("totals") or {}
+        ).get("grand_total_partial_inr") or 0.0
+        self.append_review_log(
+            "award_saved",
+            f"{n} line(s) · ₹{float(total):.2f}",
+            persist=False,
+        )
         self._persist()
         return result
 
     def suggest_awards(self) -> dict[str, Any]:
         if not self.comparison:
             raise RuntimeError("Normalize first.")
+        if self.is_frozen:
+            raise RuntimeError("Award is frozen — unfreeze before editing.")
         result = suggest_split_award(
             self.comparison,
             qualifications=self.qualified_vendor_ids(),
@@ -557,6 +679,15 @@ class RFxPipeline:
         self.award_validation = result
         self.step = "awarded"
         self.wizard_step = "award"
+        n = len(cleaned)
+        total = (result.get("totals") or {}).get("grand_total_inr") or (
+            result.get("totals") or {}
+        ).get("grand_total_partial_inr") or 0.0
+        self.append_review_log(
+            "award_saved",
+            f"suggest cheapest split · {n} line(s) · ₹{float(total):.2f}",
+            persist=False,
+        )
         self._persist()
         return result
 
@@ -953,6 +1084,12 @@ class RFxPipeline:
                     "delivery": "stubbed (no SMTP)",
                 }
             )
+        names = ", ".join(Path(p).name for p in self.award_notice_paths) or "(none)"
+        self.append_review_log(
+            "award_notices_sent",
+            f"{len(self.award_notice_paths)} notice(s): {names}",
+            persist=False,
+        )
         self._persist()
         return self.award_notice_paths
 
@@ -974,6 +1111,8 @@ class RFxPipeline:
             "awards": self.awards,
             "award_validation": self.award_validation,
             "award_notice_paths": list(self.award_notice_paths or []),
+            "freeze": self.freeze,
+            "review_log": list(self.review_log or []),
         }
 
     def load_snapshot(self, data: dict[str, Any]) -> None:
@@ -1004,6 +1143,8 @@ class RFxPipeline:
         self.awards = dict(data.get("awards") or {})
         self.award_validation = dict(data.get("award_validation") or {})
         self.award_notice_paths = list(data.get("award_notice_paths") or [])
+        self.freeze = data.get("freeze") or None
+        self.review_log = list(data.get("review_log") or [])
 
     def _persist(self) -> None:
         if not self.rfx:
