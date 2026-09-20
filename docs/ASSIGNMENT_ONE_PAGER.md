@@ -49,9 +49,11 @@ The workspace is free tabs — **Draft → Outbox → Inbox → Compare → Ask 
 | **Normalization honesty** | USD / odd units show as converted (or flagged when unsafe); partial quotes show as missing (e.g. ~27/30 lines). |
 | **Evidence & trust** | Every priced cell opens source-of-truth evidence; Audit shows saves, notices, and overrides. |
 | **Eligible ≠ cheapest** | Knockout-fail vendors stay off the default award list; partial/override creates a manager notify, not silent eligibility. |
-| **Analyst defensibility** | VP-style / split questions return computed tables + caveats; free-ask is not canned. |
-| **Session durability** | A cold reload can restore the same event (Blob-backed snapshot). |
 | **Buyer time (thesis)** | A 5×30 event becomes one live workspace session instead of a retype week + VP afternoon. |
+| **Cycle-time to award** | Days from RFx send to signed award recommendation drop vs spreadsheet baseline (target: cut retype + rework days materially on mid-size events). |
+| **Spend under management** | Share of category RFQs that run through the comparison workspace (not offline Excel) — proxy for product adoption and attachable ARR. |
+| **Savings / leakage avoided** | Identified savings from quality-gated cheapest-qualified splits vs awarding the falsely cheapest incomplete quote; fewer re-awards from bad comparisons. |
+| **Expansion revenue** | Seat/category expansion after first win (more buyers, more categories) and willingness to pay for clarify/exception-resolution as a paid tier. |
 
 ---
 
