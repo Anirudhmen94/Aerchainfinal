@@ -152,7 +152,7 @@ def home(request: Request):
             except Exception:
                 continue
     example = (
-        "Corrugated packaging for a snacks plant in Chakan. ~30 SKUs across 3/5/7-ply RSC "
+        "Corrugated packaging for a snacks plant in Chakan. ~10 SKUs across 3/5/7-ply RSC "
         "cartons, mixed print, annual spend around ₹3.8 crore last year. Need delivered INR "
         "quotes, FSC board, and food-contact certification."
     )

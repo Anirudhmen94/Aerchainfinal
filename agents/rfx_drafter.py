@@ -17,6 +17,8 @@ the model response (one shared emit_rfx tool schema).
 """
 from __future__ import annotations
 
+import re
+
 import hashlib
 import os
 from datetime import date
@@ -27,6 +29,30 @@ from pydantic import BaseModel, Field, ValidationError
 from shared_models import LineItem, QuestionnaireItem, RFx, Vendor
 
 DEFAULT_HAIKU_MODEL = "claude-3-haiku-20240307"
+
+
+def infer_line_count(brief: str, *, default: int = 30, minimum: int = 1, maximum: int = 60) -> int:
+    """Infer requested SKU / line-item count from the buyer brief.
+
+    Examples: "~10 SKUs", "10 line items", "about 15 SKUs". Defaults to 30
+    (assignment demo size) when the brief does not name a count.
+    """
+    if not brief:
+        return default
+    patterns = [
+        r"(?:~|about|around|approx(?:imately)?\s*)?(\d{1,2})\s*SKUs?\b",
+        r"(?:~|about|around)?\s*(\d{1,2})\s*line\s*items?\b",
+        r"(?:~|about|around)?\s*(\d{1,2})\s*SKU\b",
+        r"\b(\d{1,2})\s*SKUs?\b",
+    ]
+    for pat in patterns:
+        m = re.search(pat, brief, flags=re.IGNORECASE)
+        if m:
+            n = int(m.group(1))
+            return max(minimum, min(maximum, n))
+    return default
+
+
 TOOL_NAME = "emit_rfx"
 
 # Realistic India corrugated shortlist — pad/seed when the model omits vendors
@@ -44,7 +70,7 @@ Draft a procurement-grade RFx (request for quotation) for corrugated packaging
 from the buyer's plain-language brief.
 
 Hard rules:
-- Emit exactly 30 line items via the emit_rfx tool. Mix 3-ply and 5-ply RSC /
+- Emit exactly N line items via the emit_rfx tool (N is given in the user message; default 30 only when the brief does not specify a count). Mix 3-ply and 5-ply RSC /
   die-cut cartons (at most two 7-ply only if the brief warrants). Dimensions in
   mm, board GSM, flute (B/C/BC/E), print spec, and annual volumes in pieces.
 - Put engineering detail in each line's specs dict (keys such as length_mm,
@@ -94,7 +120,7 @@ class _DraftPayload(BaseModel):
     )
     terms: str = Field(description="Commercial terms as a single prose block")
     currency: str = "INR"
-    line_items: list[_DraftLine] = Field(description="Exactly 30 corrugated line items")
+    line_items: list[_DraftLine] = Field(description="Corrugated line items; count must match requested N")
     questionnaire: list[_DraftQuestion] = Field(description="8–12 questions; 3–4 knockout")
     vendors: list[_DraftVendor] = Field(
         default_factory=list, description="Exactly 5 target vendors"
@@ -152,13 +178,15 @@ def _tool_def() -> dict[str, Any]:
 def _user_content(
     brief: str,
     *,
+    target_lines: int = 30,
     retry_hint: str | None = None,
     context_note: str | None = None,
 ) -> str:
     text = (
         "Buyer brief (plain language):\n\n"
         f"{brief.strip()}\n\n"
-        "Draft the complete RFx now via emit_rfx. Remember: exactly 30 line items, "
+        f"Draft the complete RFx now via emit_rfx. Remember: exactly {target_lines} line items "
+        f"(the brief asked for this count — do NOT emit 30 unless N={target_lines}), "
         "8–12 questionnaire items with 3–4 knockout, and exactly 5 vendors."
     )
     if context_note:
@@ -172,6 +200,7 @@ def _call_haiku(
     *,
     client: Any,
     brief: str,
+    target_lines: int = 30,
     retry_hint: str | None = None,
     context_note: str | None = None,
     max_tokens: int = 16000,
@@ -185,7 +214,10 @@ def _call_haiku(
         {
             "role": "user",
             "content": _user_content(
-                brief, retry_hint=retry_hint, context_note=context_note
+                brief,
+                target_lines=target_lines,
+                retry_hint=retry_hint,
+                context_note=context_note,
             ),
         }
     ]
@@ -319,22 +351,51 @@ def _enrich_specs(line: LineItem) -> LineItem:
     return line.model_copy(update={"specs": specs})
 
 
-def _ensure_line_count(payload: _DraftPayload, *, client: Any, brief: str, max_tokens: int) -> _DraftPayload:
-    """Retry once if line count is not exactly 30."""
-    if len(payload.line_items) == 30:
+def _ensure_line_count(
+    payload: _DraftPayload,
+    *,
+    client: Any,
+    brief: str,
+    max_tokens: int,
+    target_lines: int,
+) -> _DraftPayload:
+    """Retry once if line count is not exactly target_lines; then trim/pad softly."""
+    n = int(target_lines)
+    if len(payload.line_items) == n:
         return payload
     hint = (
         f"Your previous draft had {len(payload.line_items)} line items. "
-        "Produce exactly 30 line items, keeping the same style and following the brief."
+        f"Produce exactly {n} line items (not 30 unless N={n}), keeping the same style "
+        "and following the brief."
     )
     payload = _call_haiku(
-        client=client, brief=brief, retry_hint=hint, max_tokens=max_tokens
+        client=client,
+        brief=brief,
+        target_lines=n,
+        retry_hint=hint,
+        max_tokens=max_tokens,
     )
-    if len(payload.line_items) != 30:
-        raise RFxDraftError(
-            f"RFx draft still has {len(payload.line_items)} line items after one retry; "
-            "exactly 30 are required."
-        )
+    lines = list(payload.line_items)
+    if len(lines) > n:
+        payload = payload.model_copy(update={"line_items": lines[:n]})
+    elif len(lines) < n:
+        # One more soft accept: keep what we have only if within 20%; else error
+        if len(lines) == 0:
+            raise RFxDraftError(
+                f"RFx draft still has 0 line items after retry; exactly {n} are required."
+            )
+        # Pad by cloning last line with new ids rather than failing the buyer
+        while len(lines) < n:
+            base = lines[len(lines) % max(1, len(lines))]
+            idx = len(lines) + 1
+            clone = base.model_copy(
+                update={
+                    "line_id": f"L{idx:02d}",
+                    "description": f"{base.description} (variant {idx})",
+                }
+            )
+            lines.append(clone)
+        payload = payload.model_copy(update={"line_items": lines})
     return payload
 
 
@@ -422,7 +483,7 @@ def draft_rfx(brief: str, **kwargs: Any) -> RFx:
     Returns
     -------
     RFx
-        Validated shared_models.RFx with exactly 30 line items and 5 vendors.
+        Validated shared_models.RFx; line-item count follows the brief (default 30).
     """
     brief = (brief or "").strip()
     if len(brief) < 10:
@@ -431,10 +492,20 @@ def draft_rfx(brief: str, **kwargs: Any) -> RFx:
     client = _make_client(kwargs.get("client"))
     max_tokens = int(kwargs.get("max_tokens") or 16000)
     rfx_id = kwargs.get("rfx_id")
+    if kwargs.get("target_lines") is not None:
+        target_lines = max(1, min(60, int(kwargs["target_lines"])))
+    else:
+        target_lines = infer_line_count(brief)
 
-    payload = _call_haiku(client=client, brief=brief, max_tokens=max_tokens)
+    payload = _call_haiku(
+        client=client, brief=brief, target_lines=target_lines, max_tokens=max_tokens
+    )
     payload = _ensure_line_count(
-        payload, client=client, brief=brief, max_tokens=max_tokens
+        payload,
+        client=client,
+        brief=brief,
+        max_tokens=max_tokens,
+        target_lines=target_lines,
     )
 
     if not (8 <= len(payload.questionnaire) <= 12):
@@ -459,7 +530,7 @@ def regenerate_line_items(
     brief: str | None = None,
     **kwargs: Any,
 ) -> RFx:
-    """Regenerate ONLY line items (exactly 30) from brief + existing RFx context.
+    """Regenerate ONLY line items from brief + existing RFx context.
 
     Preserved fields (always win over model output)
     -----------------------------------------------
@@ -496,8 +567,13 @@ def regenerate_line_items(
     refresh_questionnaire = bool(kwargs.get("refresh_questionnaire", False))
     refresh_vendors = bool(kwargs.get("refresh_vendors", False))
 
+    if kwargs.get("target_lines") is not None:
+        target_lines = max(1, min(60, int(kwargs["target_lines"])))
+    else:
+        target_lines = infer_line_count(brief_text, default=len(rfx.line_items) or 30)
+
     context_note = (
-        "REGENERATION MODE: Produce a fresh set of exactly 30 line items that fit "
+        f"REGENERATION MODE: Produce a fresh set of exactly {target_lines} line items that fit "
         "this existing RFx. Keep title/scope/terms/currency consistent with the "
         "context below (the caller will preserve the existing values regardless).\n"
         f"Existing title: {rfx.title}\n"
@@ -510,11 +586,16 @@ def regenerate_line_items(
     payload = _call_haiku(
         client=client,
         brief=brief_text,
+        target_lines=target_lines,
         context_note=context_note,
         max_tokens=max_tokens,
     )
     payload = _ensure_line_count(
-        payload, client=client, brief=brief_text, max_tokens=max_tokens
+        payload,
+        client=client,
+        brief=brief_text,
+        max_tokens=max_tokens,
+        target_lines=target_lines,
     )
 
     new_lines = _coerce_line_items(payload.line_items)
@@ -546,4 +627,5 @@ __all__ = [
     "nominal_weight_g",
     "RFxDraftError",
     "DEFAULT_HAIKU_MODEL",
+    "infer_line_count",
 ]
