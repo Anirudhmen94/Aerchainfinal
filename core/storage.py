@@ -286,25 +286,83 @@ def delete_rfx(rfx_id: str) -> None:
 
 
 def storage_healthcheck() -> dict[str, Any]:
-    """Tiny write/read roundtrip for /healthz/storage. Never raises."""
+    """Tiny write/read roundtrip for /healthz/storage. Never raises.
+
+    When Vercel Blob is configured but suspended/403, we still probe the local
+    (/tmp) backend and document that durable cold-start recovery is via
+    browser localStorage + POST /crew/rehydrate — not Blob.
+    """
     result: dict[str, Any] = {
         "backend": backend_name(),
         "blob_configured": blob_configured(),
+        "blob_ok": False,
         "write_ok": False,
         "read_ok": False,
+        "fallback": None,
     }
     probe_id = f"_healthz_{int(time.time() * 1000)}"
-    try:
-        payload = {"ok": True, "probe": probe_id}
-        save_state(probe_id, dict(payload))
-        result["write_ok"] = True
-        loaded = load_state(probe_id)
-        result["read_ok"] = bool(loaded and loaded.get("probe") == probe_id)
+    blob_err: str | None = None
+
+    # 1) Try configured Blob (if any)
+    if blob_configured():
         try:
-            delete_rfx(probe_id)
+            payload = {"ok": True, "probe": probe_id, "via": "blob"}
+            # Force blob path: save_state uses put_bytes which uses token
+            save_state(probe_id, dict(payload))
+            loaded = load_state(probe_id)
+            if loaded and loaded.get("probe") == probe_id:
+                result["blob_ok"] = True
+                result["write_ok"] = True
+                result["read_ok"] = True
+                result["backend"] = "vercel-blob"
+                try:
+                    delete_rfx(probe_id)
+                except Exception:
+                    pass
+                return result
+        except Exception as exc:  # noqa: BLE001
+            blob_err = f"{exc.__class__.__name__}: {exc}"
+            log.warning("storage_healthcheck blob failed: %s", exc)
+            result["blob_error"] = blob_err
+            if "store_suspended" in str(exc):
+                result["blob_status"] = "store_suspended"
+
+    # 2) Local /tmp (or data/store) roundtrip — warm-instance durability only
+    token_was = os.environ.get("BLOB_READ_WRITE_TOKEN")
+    try:
+        # Temporarily disable blob so put/get hit LOCAL_ROOT
+        if "BLOB_READ_WRITE_TOKEN" in os.environ:
+            os.environ.pop("BLOB_READ_WRITE_TOKEN", None)
+        # Re-bind is not needed: _token() reads env each call
+        local_probe = f"{probe_id}_local"
+        payload = {"ok": True, "probe": local_probe, "via": "local"}
+        save_state(local_probe, dict(payload))
+        loaded = load_state(local_probe)
+        result["write_ok"] = bool(loaded and loaded.get("probe") == local_probe)
+        result["read_ok"] = result["write_ok"]
+        result["backend"] = "local-tmp" if (os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")) else "local-files"
+        try:
+            delete_rfx(local_probe)
         except Exception:
             pass
     except Exception as exc:  # noqa: BLE001
         result["error"] = f"{exc.__class__.__name__}: {exc}"
-        log.warning("storage_healthcheck failed: %s", exc)
+        log.warning("storage_healthcheck local failed: %s", exc)
+    finally:
+        if token_was is not None:
+            os.environ["BLOB_READ_WRITE_TOKEN"] = token_was
+
+    # 3) Document client fallback when Blob is dead (the demo cold-start path)
+    if blob_configured() and not result.get("blob_ok"):
+        result["fallback"] = "client_localStorage+rehydrate"
+        result["durable"] = False
+        result["note"] = (
+            "Vercel Blob unavailable (often store_suspended). "
+            "Instance /tmp is warm-only; cold starts recover via "
+            "browser localStorage key aerchain.rfx.{id} → POST /crew/rehydrate."
+        )
+    else:
+        result["durable"] = bool(result.get("blob_ok") or result.get("backend") == "local-files")
+        if result.get("backend") == "local-files":
+            result["fallback"] = None
     return result

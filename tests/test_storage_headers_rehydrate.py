@@ -167,3 +167,28 @@ def test_healthz_storage_local(tmp_path, monkeypatch):
     assert body["write_ok"] is True
     assert body["read_ok"] is True
     assert body["ok"] is True
+
+
+def test_sanitize_strips_nan_suffix():
+    import app_crew
+
+    assert app_crew._sanitize_rfx_id("RFX-20260920-CEB9FBNaN") == "RFX-20260920-CEB9FB"
+    assert app_crew._sanitize_rfx_id("RFX-20260920-CEB9FB") == "RFX-20260920-CEB9FB"
+    html = app_crew._not_found_html("RFX-20260920-CEB9FBNaN")
+    assert "CEB9FBNaN" not in html
+    assert 'data-rfx-id="RFX-20260920-CEB9FB"' in html
+
+
+def test_healthz_storage_documents_client_fallback(tmp_path, monkeypatch):
+    monkeypatch.delenv("BLOB_READ_WRITE_TOKEN", raising=False)
+    monkeypatch.setenv("LOCAL_STORE_DIR", str(tmp_path / "store"))
+    monkeypatch.setattr(storage, "LOCAL_ROOT", tmp_path / "store")
+    import app_crew
+
+    client = TestClient(app_crew.app)
+    r = client.get("/healthz/storage")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["write_ok"] is True
+    assert "client_session" in body
+    assert body["client_session"]["localStorage_key"] == "aerchain.rfx.{rfx_id}"

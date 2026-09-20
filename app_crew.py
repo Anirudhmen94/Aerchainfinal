@@ -41,10 +41,22 @@ app = FastAPI(title="Aerchain RFx Crew", version="0.3.0")
 # load_pipeline rehydrates from STORE_DIR (/tmp) then core.storage Blob when configured.
 _SESSIONS: dict[str, RFxPipeline] = {}
 
+def _sanitize_rfx_id(raw: str) -> str:
+    """Strip JS NaN/undefined junk; keep RFX-… token only."""
+    import re as _re
+    s = (raw or "").strip()
+    s = _re.sub(r"(NaN|undefined|null)+$", "", s, flags=_re.I)
+    m = _re.match(r"(RFX-[A-Za-z0-9_-]+)", s)
+    return m.group(1) if m else ""
+
+
 def _not_found_html(rfx_id: str = "") -> str:
     """Friendly 404 that tries browser localStorage rehydrate before giving up."""
-    rid = html.escape(rfx_id or "")
-    rid_js = json.dumps(rfx_id or "")
+    clean = _sanitize_rfx_id(rfx_id) or _sanitize_rfx_id(
+        (rfx_id or "").replace("NaN", "").replace("undefined", "")
+    )
+    rid = html.escape(clean or (rfx_id or "").replace("NaN", "")[:64] or "")
+    rid_js = json.dumps(clean)
     return f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8"/>
@@ -58,27 +70,37 @@ def _not_found_html(rfx_id: str = "") -> str:
  a{{color:#4338ca;font-weight:500}}
  .muted{{color:#64748b;font-size:0.8rem}}
  #status{{margin-top:0.75rem;font-size:0.85rem}}
-</style></head><body>
+</style></head><body data-rfx-id={rid_js}>
 <div class="card">
  <h1>Session missing on server</h1>
- <p>RFx <code>{rid or "(unknown)"}</code> is not on this serverless instance
- (cold start or Blob miss). Checking your browser for a saved copy…</p>
+ <p>RFx <code id="rid-label">{rid or "(unknown)"}</code> is not on this serverless instance
+ (cold start — Blob durability unavailable). Checking your browser for a saved copy…</p>
  <div id="status" class="muted">Looking in localStorage…</div>
  <p style="margin-top:1rem"><a href="/">← Back to Home</a></p>
 </div>
 <script>
 (function () {{
-  var id = {rid_js};
+  function sanitizeRfxId(raw) {{
+    var s = String(raw == null ? "" : raw);
+    s = s.replace(/(NaN|undefined|null)+$/gi, "");
+    var m = s.match(/^(RFX-[A-Za-z0-9_-]+)/);
+    return m ? m[1] : "";
+  }}
+  var id = sanitizeRfxId({rid_js});
+  try {{
+    var m = location.pathname.match(new RegExp('/crew/([^/?#]+)'));
+    if (m && m[1]) {{
+      var fromPath = sanitizeRfxId(decodeURIComponent(m[1]));
+      if (fromPath) id = fromPath;
+    }}
+  }} catch (e) {{}}
   var status = document.getElementById("status");
+  var label = document.getElementById("rid-label");
+  if (label && id) label.textContent = id;
   if (!id) {{
-    status.textContent = "No RFx id in this URL. Start a new draft from Home.";
+    status.textContent = "No valid RFx id in this URL. Start a new draft from Home.";
     return;
   }}
-  // Prefer id from path if the page was hit without an embedded id.
-  try {{
-    var m = location.pathname.match(new RegExp('/crew/([^/]+)'));
-    if (m && m[1]) id = decodeURIComponent(m[1]);
-  }} catch (e) {{}}
   var key = "aerchain.rfx." + id;
   var raw = null;
   try {{ raw = localStorage.getItem(key); }} catch (e) {{}}
@@ -90,13 +112,14 @@ def _not_found_html(rfx_id: str = "") -> str:
   status.textContent = "Found a local copy — restoring on the server…";
   fetch("/crew/rehydrate", {{
     method: "POST",
-    headers: {{"Content-Type": "application/json"}},
+    headers: {{"Content-Type": "application/json", "Accept": "application/json"}},
     body: raw
   }}).then(function (r) {{
     if (r.redirected) {{ location.href = r.url; return; }}
     if (r.ok) {{
       return r.json().then(function (j) {{
-        location.href = (j && j.redirect) || ("/crew/" + encodeURIComponent(id) + "/wizard");
+        var dest = (j && j.redirect) ? j.redirect : ("/crew/" + encodeURIComponent(id) + "/wizard");
+        location.href = dest;
       }}).catch(function () {{
         location.href = "/crew/" + encodeURIComponent(id) + "/wizard";
       }});
@@ -113,7 +136,7 @@ def _not_found_html(rfx_id: str = "") -> str:
 
 
 def _not_found_response(rfx_id: str = "") -> HTMLResponse:
-    return HTMLResponse(_not_found_html(rfx_id), status_code=404)
+    return HTMLResponse(_not_found_html(_sanitize_rfx_id(rfx_id) or rfx_id), status_code=404)
 
 
 @app.exception_handler(Exception)
@@ -145,6 +168,11 @@ def _err_html(message: str, status: int = 400) -> HTMLResponse:
 
 
 def _session(rfx_id: Optional[str] = None) -> RFxPipeline:
+    if rfx_id:
+        clean = _sanitize_rfx_id(rfx_id) or rfx_id
+        if clean != rfx_id:
+            log.warning("sanitized rfx_id %r -> %r", rfx_id, clean)
+        rfx_id = clean
     if rfx_id and rfx_id in _SESSIONS:
         return _SESSIONS[rfx_id]
     if rfx_id:
@@ -449,7 +477,7 @@ def healthz():
 
 @app.get("/healthz/storage")
 def healthz_storage():
-    """Tiny Blob/local roundtrip. Always 200 with write_ok/read_ok flags."""
+    """Storage probe. Always 200. When Blob is suspended, documents LS fallback."""
     try:
         from core import storage as _storage
 
@@ -458,11 +486,20 @@ def healthz_storage():
         result = {
             "backend": "unknown",
             "blob_configured": False,
+            "blob_ok": False,
             "write_ok": False,
             "read_ok": False,
             "error": f"{exc.__class__.__name__}: {exc}",
+            "fallback": "client_localStorage+rehydrate",
         }
+    # ok = local or blob can write/read this instance; durable flagged separately
     result["ok"] = bool(result.get("write_ok") and result.get("read_ok"))
+    result["client_session"] = {
+        "localStorage_key": "aerchain.rfx.{rfx_id}",
+        "session_json": "/crew/{rfx_id}/session.json",
+        "rehydrate": "POST /crew/rehydrate",
+        "embedded": "window.__AERCHAIN_SNAP__",
+    }
     return JSONResponse(result)
 
 

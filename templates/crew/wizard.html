@@ -1,6 +1,19 @@
 {% extends "crew/base.html" %}
 {% block title %}{{ rfx.title }} · Workspace{% endblock %}
 {% block content %}
+<script>
+window.__AERCHAIN_SNAP__ = {{ snapshot | tojson }};
+</script>
+<script>
+(function () {
+  try {
+    var id = {{ (rfx.rfx_id if rfx else '') | tojson }};
+    if (id && String(id).indexOf('NaN') === -1) {
+      document.body.setAttribute('data-rfx-id', id);
+    }
+  } catch (e) {}
+})();
+</script>
 {% set labels = {"draft":"Draft","send":"Outbox","inbox":"Inbox","compare":"Compare","ask":"Ask","award":"Award","audit":"Audit"} %}
 
 <div class="workspace-sticky no-print">

@@ -309,24 +309,122 @@
       document.querySelectorAll('[data-compare-filters]').forEach(bindCompareFilters);
     }
 
-    function cacheSessionSnapshot() {
+    function sanitizeRfxId(raw) {
+      var s = String(raw == null ? '' : raw);
+      s = s.replace(/(NaN|undefined|null)+$/gi, '');
+      var m = s.match(/^(RFX-[A-Za-z0-9_-]+)/);
+      return m ? m[1] : '';
+    }
+
+    function currentRfxId() {
+      var el = document.body && document.body.getAttribute('data-rfx-id');
+      var id = sanitizeRfxId(el);
+      if (id) return id;
       try {
-        var m = location.pathname.match(/\/crew\/([^\/]+)/);
-        if (!m || !m[1]) return;
-        var id = decodeURIComponent(m[1]);
-        if (!id || id === 'rehydrate') return;
-        fetch('/crew/' + encodeURIComponent(id) + '/session.json', {
-          credentials: 'same-origin',
-          headers: { 'Accept': 'application/json' }
-        }).then(function (r) {
-          if (!r.ok) return null;
-          return r.text();
-        }).then(function (txt) {
-          if (!txt) return;
-          try { localStorage.setItem('aerchain.rfx.' + id, txt); } catch (e) {}
-        }).catch(function () {});
+        var m = location.pathname.match(/\/crew\/([^\/?#]+)/);
+        if (m && m[1]) return sanitizeRfxId(decodeURIComponent(m[1]));
+      } catch (e) {}
+      return '';
+    }
+
+    function lsKey(id) { return 'aerchain.rfx.' + id; }
+
+    function saveSnapToLocalStorage(id, objOrText) {
+      if (!id) return;
+      try {
+        var txt = (typeof objOrText === 'string') ? objOrText : JSON.stringify(objOrText);
+        if (!txt) return;
+        localStorage.setItem(lsKey(id), txt);
       } catch (e) {}
     }
+
+    function readSnapFromLocalStorage(id) {
+      try { return localStorage.getItem(lsKey(id)); } catch (e) { return null; }
+    }
+
+    function cacheSessionSnapshot() {
+      var id = currentRfxId();
+      if (!id || id === 'rehydrate') return;
+      document.body.setAttribute('data-rfx-id', id);
+
+      // Prefer embedded snapshot (first paint, no extra roundtrip)
+      try {
+        if (window.__AERCHAIN_SNAP__ && typeof window.__AERCHAIN_SNAP__ === 'object') {
+          var embedded = window.__AERCHAIN_SNAP__;
+          var eid = sanitizeRfxId((embedded.rfx && embedded.rfx.rfx_id) || id);
+          if (eid) saveSnapToLocalStorage(eid, embedded);
+        }
+      } catch (e) {}
+
+      fetch('/crew/' + encodeURIComponent(id) + '/session.json', {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' }
+      }).then(function (r) {
+        if (!r.ok) return null;
+        return r.text();
+      }).then(function (txt) {
+        if (!txt) return;
+        saveSnapToLocalStorage(id, txt);
+      }).catch(function () {});
+    }
+
+    function rehydrateFromLocalStorage(id) {
+      id = sanitizeRfxId(id) || currentRfxId();
+      if (!id) return Promise.resolve(false);
+      var raw = readSnapFromLocalStorage(id);
+      if (!raw) return Promise.resolve(false);
+      return fetch('/crew/rehydrate', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: raw
+      }).then(function (r) {
+        return r.ok || r.redirected || r.status === 303;
+      }).catch(function () { return false; });
+    }
+
+    window.__aerchainEnsureSession = function (id) {
+      id = sanitizeRfxId(id) || currentRfxId();
+      if (!id) return Promise.resolve(false);
+      return fetch('/crew/' + encodeURIComponent(id) + '/session.json', {
+        credentials: 'same-origin',
+        headers: { 'Accept': 'application/json' }
+      }).then(function (r) {
+        if (r.ok) return true;
+        if (r.status === 404) return rehydrateFromLocalStorage(id);
+        return false;
+      }).catch(function () {
+        return rehydrateFromLocalStorage(id);
+      });
+    };
+
+    // Before form POST / HTMX that needs server state: rehydrate if cold
+    document.addEventListener('submit', function (ev) {
+      var form = ev.target;
+      if (!form || !form.action) return;
+      var id = currentRfxId();
+      if (!id) return;
+      if (form.dataset.aerchainReady === '1') return;
+      // Only intercept crew mutation posts
+      if (String(form.action).indexOf('/crew/') === -1) return;
+      ev.preventDefault();
+      window.__aerchainEnsureSession(id).then(function (ok) {
+        form.dataset.aerchainReady = '1';
+        // Re-save snap after ensure
+        cacheSessionSnapshot();
+        if (typeof form.requestSubmit === 'function') form.requestSubmit();
+        else form.submit();
+      });
+    }, true);
+
+    document.body.addEventListener('htmx:confirm', function (ev) {
+      var id = currentRfxId();
+      if (!id) return;
+      ev.preventDefault();
+      window.__aerchainEnsureSession(id).then(function () {
+        ev.detail.issueRequest(true);
+      });
+    });
 
     document.addEventListener('DOMContentLoaded', function () {
       bindTipDismiss();
@@ -336,6 +434,7 @@
     document.body.addEventListener('htmx:afterSettle', function () {
       bindTipDismiss();
       initFilters();
+      cacheSessionSnapshot();
     });
   })();
   </script>
