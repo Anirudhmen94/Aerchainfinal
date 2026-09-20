@@ -8,7 +8,6 @@ from __future__ import annotations
 import base64
 import csv
 import email
-import io
 import json
 import os
 import re
@@ -18,7 +17,22 @@ from typing import Any, Optional, Union
 
 from shared_models import ExtractedQuote, RFx
 
-HAIKU_MODEL = os.environ.get("ANTHROPIC_HAIKU_MODEL", "claude-3-haiku-20240307")
+_HAIKU_FALLBACKS = [
+    "claude-3-haiku-20240307",
+    "claude-haiku-4-5-20251001",
+    "claude-3-5-haiku-20241022",
+]
+
+
+def _resolve_haiku_model() -> str:
+    preferred = os.environ.get("ANTHROPIC_HAIKU_MODEL", "").strip()
+    for c in [preferred, *_HAIKU_FALLBACKS]:
+        if c:
+            return c
+    return "claude-3-haiku-20240307"
+
+
+HAIKU_MODEL = _resolve_haiku_model()
 
 JSON_CSV_EXTS = {".json", ".csv"}
 TEXT_EXTS = {".txt", ".md", ".eml", ".msg"}
@@ -70,7 +84,6 @@ def _guess_vendor_id(path: Path, vendor_id: Optional[str] = None, vendor_hint: s
 
 
 def _rfx_context(rfx: Any) -> dict[str, Any]:
-    """Normalize RFx object/dict into prompt-friendly context."""
     if rfx is None:
         return {"rfx_id": "", "currency": "INR", "line_items": [], "questionnaire": []}
     if isinstance(rfx, RFx):
@@ -94,7 +107,12 @@ def _rfx_context(rfx: Any) -> dict[str, Any]:
                 }
             )
         else:
-            slim_lines.append({"line_id": str(getattr(li, "line_id", "")), "description": str(getattr(li, "description", ""))})
+            slim_lines.append(
+                {
+                    "line_id": str(getattr(li, "line_id", "")),
+                    "description": str(getattr(li, "description", "")),
+                }
+            )
     qs = data.get("questionnaire") or []
     slim_q = []
     for q in qs:
@@ -121,7 +139,6 @@ def _as_float(value: Any) -> Optional[float]:
 
 
 def _normalize_line(row: dict[str, Any], default_currency: str = "INR") -> dict[str, Any]:
-    """Map heterogeneous row keys into a stable line dict."""
     line_id = row.get("line_id")
     if line_id is None:
         line_id = row.get("Line#") or row.get("line") or row.get("Line") or row.get("id") or ""
@@ -163,7 +180,6 @@ def _normalize_line(row: dict[str, Any], default_currency: str = "INR") -> dict[
         "notes": str(notes).strip(),
         "currency": str(currency).strip() or default_currency,
     }
-    # Preserve INR alias when source used unit_price_inr
     if "unit_price_inr" in row and price is not None:
         out["unit_price_inr"] = price
     return out
@@ -229,11 +245,6 @@ def _quote(
     )
 
 
-# ---------------------------------------------------------------------------
-# Deterministic parsers
-# ---------------------------------------------------------------------------
-
-
 def _parse_json(path: Path, vendor_id: str) -> ExtractedQuote:
     data = json.loads(path.read_text(encoding="utf-8"))
     currency = str(data.get("currency") or "INR")
@@ -288,7 +299,6 @@ def _parse_csv(path: Path, vendor_id: str) -> ExtractedQuote:
             evidence_bits.append({"snippet": row, "location": f"line {lineno}"})
             continue
         if section == "questionnaire":
-            # question,answer or question: answer
             if "," in row:
                 parts = next(csv.reader([row]))
                 if len(parts) >= 2:
@@ -302,32 +312,22 @@ def _parse_csv(path: Path, vendor_id: str) -> ExtractedQuote:
                 answers.append({"question": row, "answer": ""})
             continue
 
-        # line-item section
         if header is None:
-            header = next(csv.reader([row]))
-            header = [h.strip() for h in header]
+            header = [h.strip() for h in next(csv.reader([row]))]
             continue
         cells = next(csv.reader([row]))
-        # pad / trim
         while len(cells) < len(header):
             cells.append("")
         mapped = {header[i]: cells[i].strip() for i in range(len(header))}
-        # skip if looks like a second header
-        if any(k.lower() in {"line#", "line_id", "item description"} for k in mapped.values()):
+        if any(str(v).lower() in {"line#", "line_id", "item description"} for v in mapped.values()):
             continue
         norm = _normalize_line(mapped, currency)
         if not norm["description"] and norm["unit_price"] is None:
             continue
         lines_out.append(norm)
         if norm["unit_price"] is not None:
-            evidence_bits.append(
-                {
-                    "snippet": raw[:200],
-                    "location": f"line {lineno}",
-                }
-            )
+            evidence_bits.append({"snippet": raw[:200], "location": f"line {lineno}"})
 
-    # Guess vendor from filename stem after Vxx_
     stem = path.stem
     m = re.match(r"V\d+[_-]?(.*)$", stem, re.I)
     if m and m.group(1):
@@ -355,11 +355,6 @@ def _parse_csv(path: Path, vendor_id: str) -> ExtractedQuote:
         confidence=0.9 if lines_out else 0.5,
         raw_evidence=evidence,
     )
-
-
-# ---------------------------------------------------------------------------
-# Text / binary extraction
-# ---------------------------------------------------------------------------
 
 
 def _extract_txt(path: Path) -> str:
@@ -400,9 +395,7 @@ def _extract_eml(path: Path) -> str:
 
 
 def _extract_msg(path: Path) -> str:
-    """Best-effort .msg extraction without proprietary deps."""
     raw = path.read_bytes()
-    # OLE .msg often contains UTF-16LE strings; pull printable runs.
     try:
         as_utf16 = raw.decode("utf-16-le", errors="ignore")
         chunks = re.findall(r"[\x20-\x7e\n\r\t]{8,}", as_utf16)
@@ -420,9 +413,9 @@ def _extract_docx(path: Path) -> str:
 
     doc = Document(str(path))
     parts: list[str] = []
-    for p in doc.paragraphs:
-        if p.text.strip():
-            parts.append(p.text)
+    for para in doc.paragraphs:
+        if para.text.strip():
+            parts.append(para.text)
     for table in doc.tables:
         for row in table.rows:
             cells = [c.text.strip() for c in row.cells]
@@ -447,14 +440,13 @@ def _extract_pdf(path: Path) -> str:
 
 
 def _image_media_type(path: Path) -> str:
-    ext = path.suffix.lower()
     return {
         ".jpg": "image/jpeg",
         ".jpeg": "image/jpeg",
         ".png": "image/png",
         ".webp": "image/webp",
         ".gif": "image/gif",
-    }.get(ext, "image/jpeg")
+    }.get(path.suffix.lower(), "image/jpeg")
 
 
 def _strip_json_fence(text: str) -> str:
@@ -465,69 +457,104 @@ def _strip_json_fence(text: str) -> str:
     return text.strip()
 
 
-def _call_haiku_text(document_text: str, rfx_ctx: dict[str, Any], *, source_name: str) -> dict[str, Any]:
+def _candidate_models() -> list[str]:
+    preferred = os.environ.get("ANTHROPIC_HAIKU_MODEL", "").strip() or HAIKU_MODEL
+    out: list[str] = []
+    for c in [preferred, *_HAIKU_FALLBACKS]:
+        if c and c not in out:
+            out.append(c)
+    return out
+
+
+def _haiku_complete(*, system: str, messages: list[dict], max_tokens: int = 4096) -> tuple[str, str]:
     from agents.llm import complete
 
+    last_err: Exception | None = None
+    for model in _candidate_models():
+        try:
+            return complete(model=model, system=system, messages=messages, max_tokens=max_tokens), model
+        except Exception as exc:  # noqa: BLE001
+            msg = str(exc).lower()
+            if "not_found" in msg or "404" in msg:
+                last_err = exc
+                continue
+            raise
+    raise RuntimeError(f"No usable Haiku model from {_candidate_models()}: {last_err}")
+
+
+def _haiku_vision(*, path: Path, system: str, user_text: str) -> tuple[str, str]:
+    from agents.llm import get_client
+
+    b64 = base64.standard_b64encode(path.read_bytes()).decode("ascii")
+    media = _image_media_type(path)
+    client = get_client()
+    last_err: Exception | None = None
+    for model in _candidate_models():
+        try:
+            resp = client.messages.create(
+                model=model,
+                max_tokens=4096,
+                system=system,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {"type": "base64", "media_type": media, "data": b64},
+                            },
+                            {"type": "text", "text": user_text},
+                        ],
+                    }
+                ],
+            )
+            parts: list[str] = []
+            for block in resp.content:
+                if getattr(block, "type", None) == "text":
+                    parts.append(block.text)
+                elif hasattr(block, "text"):
+                    parts.append(block.text)
+            return "\n".join(parts).strip(), model
+        except Exception as exc:  # noqa: BLE001
+            msg = str(exc).lower()
+            if "not_found" in msg or "404" in msg:
+                last_err = exc
+                continue
+            raise
+    raise RuntimeError(f"No usable Haiku vision model from {_candidate_models()}: {last_err}")
+
+
+def _call_haiku_text(document_text: str, rfx_ctx: dict[str, Any], *, source_name: str) -> dict[str, Any]:
     user_payload = {
         "source_file": source_name,
         "rfx": rfx_ctx,
         "vendor_document_text": document_text[:120000],
     }
-    raw = complete(
-        model=HAIKU_MODEL,
-        system=SYSTEM_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    "Parse this vendor reply into the JSON schema. "
-                    "Use the RFx line list only as matching context — do not invent prices.\n\n"
-                    + json.dumps(user_payload, ensure_ascii=False)
-                ),
-            }
-        ],
-        max_tokens=4096,
-        
+    prompt = (
+        "Parse this vendor reply into the JSON schema. "
+        "Use the RFx line list only as matching context — do not invent prices.\n\n"
+        + json.dumps(user_payload, ensure_ascii=False)
     )
-    return json.loads(_strip_json_fence(raw))
+    raw, model_used = _haiku_complete(
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=4096,
+    )
+    parsed = json.loads(_strip_json_fence(raw))
+    parsed["_model_used"] = model_used
+    return parsed
 
 
 def _call_haiku_image(path: Path, rfx_ctx: dict[str, Any]) -> dict[str, Any]:
-    from agents.llm import get_client
-
-    client = get_client()
-    b64 = base64.standard_b64encode(path.read_bytes()).decode("ascii")
-    media = _image_media_type(path)
     user_text = (
         "Transcribe then parse this vendor reply image into the required JSON schema. "
         "Extract only visible prices/answers. Use RFx lines as matching context only.\n\n"
         + json.dumps({"source_file": path.name, "rfx": rfx_ctx}, ensure_ascii=False)
     )
-    resp = client.messages.create(
-        model=HAIKU_MODEL,
-        max_tokens=4096,
-        
-        system=SYSTEM_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {"type": "base64", "media_type": media, "data": b64},
-                    },
-                    {"type": "text", "text": user_text},
-                ],
-            }
-        ],
-    )
-    parts: list[str] = []
-    for block in resp.content:
-        if getattr(block, "type", None) == "text":
-            parts.append(block.text)
-        elif hasattr(block, "text"):
-            parts.append(block.text)
-    return json.loads(_strip_json_fence("\n".join(parts).strip()))
+    raw, model_used = _haiku_vision(path=path, system=SYSTEM_PROMPT, user_text=user_text)
+    parsed = json.loads(_strip_json_fence(raw))
+    parsed["_model_used"] = model_used
+    return parsed
 
 
 def _quote_from_llm(
@@ -536,6 +563,7 @@ def _quote_from_llm(
     source_format: str,
     parsed: dict[str, Any],
 ) -> ExtractedQuote:
+    model_used = str(parsed.pop("_model_used", HAIKU_MODEL))
     currency = str(parsed.get("currency") or "INR")
     vendor_name = str(parsed.get("vendor_name") or "")
     raw_lines = parsed.get("lines") or []
@@ -548,9 +576,8 @@ def _quote_from_llm(
         confidence = float(conf) if conf is not None else (0.7 if lines else 0.35)
     except (TypeError, ValueError):
         confidence = 0.5
-    evidence_in = parsed.get("raw_evidence") or []
     evidence_extra: list[dict[str, Any]] = []
-    for item in evidence_in:
+    for item in parsed.get("raw_evidence") or []:
         if isinstance(item, dict):
             evidence_extra.append(
                 {
@@ -560,7 +587,7 @@ def _quote_from_llm(
             )
     evidence = _meta_evidence(
         path,
-        parse_method=f"claude_haiku:{HAIKU_MODEL}",
+        parse_method=f"claude_haiku:{model_used}",
         vendor_name=vendor_name,
         currency=currency,
         extraction_notes=extraction_notes,
@@ -620,11 +647,6 @@ def _parse_unstructured(path: Path, vendor_id: str, rfx_ctx: dict[str, Any]) -> 
     return _quote_from_llm(path, vendor_id, fmt, parsed)
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
 def parse_response(
     path: Union[str, Path],
     vendor_id: str,
@@ -648,10 +670,6 @@ def parse_response(
         return _parse_json(p, vid)
     if suffix == ".csv":
         return _parse_csv(p, vid)
-    if suffix in SUPPORTED or suffix in TEXT_EXTS | DOC_EXTS | IMAGE_EXTS:
-        return _parse_unstructured(p, vid, rfx_ctx)
-
-    # Unknown extension: treat as text if readable
     return _parse_unstructured(p, vid, rfx_ctx)
 
 
@@ -667,7 +685,7 @@ def parse_vendor_file(
     vid = _guess_vendor_id(p, vendor_id, vendor_hint)
     quote = parse_response(p, vid, rfx)
     data = quote.model_dump()
-    meta = {}
+    meta: dict[str, Any] = {}
     for item in quote.raw_evidence:
         if isinstance(item, dict) and item.get("kind") == "meta":
             meta = item
@@ -681,7 +699,7 @@ def parse_vendor_file(
 
 
 def parse_vendor_dir(directory: str) -> list[dict]:
-    """Parse every non-hidden file in directory (sorted)."""
+    """Parse every non-hidden supported file in directory (sorted)."""
     d = Path(directory)
     if not d.is_dir():
         raise NotADirectoryError(d)

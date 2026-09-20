@@ -17,7 +17,12 @@ from fastapi import FastAPI, File, Form, Request, UploadFile  # noqa: E402
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse  # noqa: E402
 from fastapi.templating import Jinja2Templates  # noqa: E402
 
-from orchestrator.pipeline import RFxPipeline, STORE_DIR, VENDOR_DIR, load_pipeline  # noqa: E402
+from orchestrator.pipeline import (  # noqa: E402
+    RFxPipeline,
+    STORE_DIR,
+    VENDOR_DIR,
+    load_pipeline,
+)
 
 ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
