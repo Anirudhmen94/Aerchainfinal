@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Ask · {{ state.rfx.title }}{% endblock %}
+{% block content %}
+<div class="flex flex-wrap items-start justify-between gap-4">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight">Ask the analyst</h1>
+    <p class="mt-1 text-sm text-slate-600">Plain-language questions over the whole comparison. The model chooses which calculations to run; the calculations run in code and are shown as tables under each answer.</p>
+  </div>
+  {% if state.chat %}
+  <form hx-post="/rfx/{{ state.id }}/chat/clear" hx-confirm="Clear the conversation?"><button class="text-sm text-slate-500 hover:text-rose-600">Clear conversation</button></form>
+  {% endif %}
+</div>
+
+{% if not ready %}
+<div class="mt-8 rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
+  Read at least one vendor response first. <a href="/rfx/{{ state.id }}/inbox" class="underline">Go to the inbox</a>.
+</div>
+{% else %}
+<div class="mt-6 grid lg:grid-cols-4 gap-6">
+  <div class="lg:col-span-3">
+    <div id="chat" class="space-y-6">
+      {% for m in state.chat %}{% set idx = loop.index0 %}{% include "partials/chat_message.html" %}{% endfor %}
+    </div>
+    <div id="chat-error" class="mt-3"></div>
+    <form id="ask-form" hx-post="/rfx/{{ state.id }}/ask" hx-target="#chat" hx-swap="beforeend" hx-indicator="#ask-busy" hx-disabled-elt="#ask-btn"
+          hx-on::after-request="if(event.detail.successful){this.reset(); window.scrollTo(0, document.body.scrollHeight);} else {document.getElementById('chat-error').innerHTML = event.detail.xhr.responseText;}"
+          class="mt-6 sticky bottom-4 rounded-xl border border-slate-300 bg-white shadow-lg p-3">
+      <textarea name="question" rows="2" required placeholder="e.g. Split cheapest per line, but only among vendors who cleared the questionnaire. What does it cost and who gets what?"
+        class="w-full resize-none border-0 focus:ring-0 text-sm p-1" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault(); this.form.requestSubmit();}"></textarea>
+      <div class="flex items-center justify-between mt-1">
+        <span id="ask-busy" class="htmx-indicator items-center gap-2 text-xs text-slate-600">
+          <svg class="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
+          Running calculations and writing the answer (10-40 s)
+        </span>
+        <span class="text-xs text-slate-400 htmx-hide">Enter to send · Shift+Enter for a new line</span>
+        <button id="ask-btn" class="rounded-lg bg-slate-900 text-white px-4 py-1.5 text-sm font-medium hover:bg-slate-800 disabled:opacity-50" {% if not ai_ok %}disabled{% endif %}>Ask</button>
+      </div>
+    </form>
+  </div>
+  <aside>
+    <h2 class="text-sm font-semibold text-slate-500 uppercase tracking-wide">Questions worth asking</h2>
+    <ul class="mt-3 space-y-2">
+      {% for s in suggested %}
+      <li><button type="button" onclick="const t=document.querySelector('#ask-form textarea'); t.value=this.textContent.trim(); t.focus();" class="w-full text-left rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700 hover:border-slate-400">{{ s }}</button></li>
+      {% endfor %}
+    </ul>
+    <div class="mt-6 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600">
+      <div class="font-medium text-slate-800">How answers are built</div>
+      <ol class="mt-1 list-decimal pl-4 space-y-1">
+        <li>The model picks engine functions (cheapest per line, totals, award scenarios, sensitivity, flags).</li>
+        <li>The engine computes with pandas over the normalised comparison. Flagged cells are excluded unless you ask to include them.</li>
+        <li>The tables under an answer are the raw function results. The prose is the model's reading of them.</li>
+      </ol>
+    </div>
+  </aside>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+  function drawCharts(root) {
+    root.querySelectorAll('canvas[data-chart]').forEach(cv => {
+      if (cv.dataset.done) return;
+      cv.dataset.done = '1';
+      const spec = JSON.parse(cv.dataset.chart);
+      const palette = ['#0f172a','#0284c7','#059669','#d97706','#dc2626','#7c3aed','#64748b'];
+      new Chart(cv, {
+        type: spec.type || 'bar',
+        data: { labels: spec.labels, datasets: spec.datasets.map((d,i) => ({...d, backgroundColor: palette[i % palette.length]})) },
+        options: { responsive: true, plugins: { title: { display: !!spec.title, text: spec.title }, legend: { display: spec.datasets.length > 1 } },
+                   scales: { x: { stacked: !!spec.stacked }, y: { stacked: !!spec.stacked, beginAtZero: true } } }
+      });
+    });
+  }
+  drawCharts(document);
+  document.body.addEventListener('htmx:afterSwap', e => drawCharts(e.target));
+</script>
+{% endblock %}

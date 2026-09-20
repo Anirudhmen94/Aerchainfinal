@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-50">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Kill the Quote Spreadsheet{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    .htmx-indicator { display: none; }
+    .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline-flex; }
+    .htmx-request .htmx-hide { display: none; }
+    .prose-sm table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    .prose-sm th, .prose-sm td { border: 1px solid #e2e8f0; padding: 4px 8px; text-align: left; }
+    .prose-sm th { background: #f8fafc; }
+    .prose-sm p { margin: 0.4rem 0; }
+    .prose-sm ul { list-style: disc; padding-left: 1.2rem; }
+    .prose-sm ol { list-style: decimal; padding-left: 1.2rem; }
+    .prose-sm h1, .prose-sm h2, .prose-sm h3 { font-weight: 600; margin: 0.6rem 0 0.2rem; }
+    .prose-sm code { background: #f1f5f9; padding: 0 3px; border-radius: 3px; }
+    [x-cloak] { display: none; }
+  </style>
+</head>
+<body class="h-full text-slate-800 antialiased">
+<div class="min-h-full flex flex-col">
+  <header class="bg-white border-b border-slate-200">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+      <a href="/" class="flex items-center gap-2 shrink-0">
+        <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-900 text-white font-bold text-sm">KQ</span>
+        <span class="font-semibold tracking-tight hidden sm:inline">Kill the Quote Spreadsheet</span>
+      </a>
+      {% if rfx_id %}
+      <nav class="flex items-center gap-1 text-xs sm:text-sm overflow-x-auto">
+        {% set steps = [('rfx','RFx'),('inbox','Inbox'),('compare','Compare'),('ask','Ask'),('award','Award')] %}
+        {% for key, label in steps %}
+          <a href="/rfx/{{ rfx_id }}/{{ key }}"
+             class="px-2.5 py-1.5 rounded-md whitespace-nowrap {% if active == key %}bg-slate-900 text-white{% else %}text-slate-600 hover:bg-slate-100{% endif %}">
+            <span class="opacity-60 mr-1">{{ loop.index }}</span>{{ label }}
+          </a>
+        {% endfor %}
+      </nav>
+      {% endif %}
+      <div class="flex items-center gap-2 text-xs shrink-0">
+        {% if ai_ok %}
+          <span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 border border-emerald-200" title="{{ model }}">
+            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> {{ model }}
+          </span>
+        {% else %}
+          <span class="inline-flex items-center gap-1 rounded-full bg-rose-50 text-rose-700 px-2 py-0.5 border border-rose-200">
+            <span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span> AI not configured
+          </span>
+        {% endif %}
+        <span class="hidden md:inline-flex rounded-full bg-slate-100 text-slate-600 px-2 py-0.5 border border-slate-200">{{ storage }}</span>
+      </div>
+    </div>
+  </header>
+
+  {% if not ai_ok %}
+  <div class="bg-rose-600 text-white text-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-2">
+      <strong>AI is not configured.</strong> Set <code class="bg-rose-700 px-1 rounded">ANTHROPIC_API_KEY</code> in <code class="bg-rose-700 px-1 rounded">.env</code> (local) or in the Vercel project environment variables. Drafting, extraction and the analyst will refuse to run rather than invent output.
+    </div>
+  </div>
+  {% endif %}
+
+  <main class="flex-1">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <footer class="border-t border-slate-200 text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap gap-x-4 gap-y-1 justify-between">
+      <span>Evidence-backed sourcing prototype. Numbers come from code; prose comes from the model; every value links to its source.</span>
+      <span>Vendor emails are stubbed. No real messages are sent.</span>
+    </div>
+  </footer>
+</div>
+<div id="drawer-root"></div>
+{% block scripts %}{% endblock %}
+</body>
+</html>

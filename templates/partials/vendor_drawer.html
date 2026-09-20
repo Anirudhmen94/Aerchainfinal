@@ -1,0 +1,63 @@
+{% set drawer_kicker = v.city ~ ' · ' ~ (v.files|length) ~ ' file(s)' %}
+{% set drawer_title = v.name %}
+{% include "partials/drawer_open.html" %}
+  {% set q = vrow.questionnaire %}
+  <section>
+    <div class="flex items-center justify-between">
+      <h3 class="font-medium">Quality questionnaire</h3>
+      <span class="rounded px-2 py-0.5 text-xs font-medium {% if q.overall == 'cleared' %}bg-emerald-100 text-emerald-800{% elif q.overall == 'failed' %}bg-rose-100 text-rose-800{% else %}bg-amber-100 text-amber-800{% endif %}">{{ q.overall.replace('_',' ') }} · {{ q.answered }}/{{ q.total }} answered</span>
+    </div>
+    {% if q.knockout_open %}<div class="mt-1 text-xs text-amber-800">Knockout questions without a clear answer: {{ q.knockout_open|join(', ') }}. This vendor is not treated as cleared.</div>{% endif %}
+    {% if q.knockout_failed %}<div class="mt-1 text-xs text-rose-800">Knockout questions failed: {{ q.knockout_failed|join(', ') }}.</div>{% endif %}
+    <ul class="mt-2 divide-y divide-slate-100 rounded border border-slate-200">
+      {% for r in q.rows %}
+      <li class="p-2 text-xs">
+        <div class="flex items-start gap-2">
+          <span class="w-7 shrink-0 text-slate-500">{{ r.q_id }}</span>
+          <div class="flex-1">
+            <div class="text-slate-800">{{ r.text }} {% if r.knockout %}<span class="rounded bg-amber-100 text-amber-800 px-1">knockout</span>{% endif %}</div>
+            <div class="mt-0.5 flex items-center gap-2">
+              <span class="rounded px-1.5 {% if r.verdict in ('pass','answered') %}bg-emerald-100 text-emerald-800{% elif r.verdict == 'fail' %}bg-rose-100 text-rose-800{% elif r.verdict == 'unanswered' %}bg-slate-100 text-slate-600{% else %}bg-amber-100 text-amber-800{% endif %}">{{ r.verdict }}</span>
+              {% if r.answered %}<span class="text-slate-700">“{{ r.answer }}”</span>{% else %}<span class="text-slate-400">no answer found</span>{% endif %}
+            </div>
+            {% if r.evidence %}<div class="mt-1 text-slate-500 font-mono">{{ r.evidence.file_name }} · {{ r.evidence.location }} · “{{ r.evidence.snippet }}”{% if r.evidence.verified %} ✓{% else %} ✗{% endif %}</div>{% endif %}
+          </div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section>
+    <h3 class="font-medium">Certificates</h3>
+    {% if vrow.certificates %}
+    <ul class="mt-2 space-y-1 text-xs">
+      {% for c in vrow.certificates %}
+      <li class="rounded border border-slate-200 p-2 flex items-center gap-2">
+        <span class="font-medium">{{ c.name }}</span>
+        {% if c.attached_as_document %}<span class="rounded bg-emerald-100 text-emerald-800 px-1.5">document attached</span>{% elif c.claimed_in_text %}<span class="rounded bg-amber-100 text-amber-800 px-1.5">claimed only, no document</span>{% endif %}
+        {% if c.evidence %}<span class="ml-auto text-slate-500 font-mono truncate">{{ c.evidence.location }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}<div class="mt-1 text-xs text-slate-500">None mentioned or attached.</div>{% endif %}
+  </section>
+
+  <section>
+    <h3 class="font-medium">Commercial terms as extracted</h3>
+    {% set terms = vrow.commercial.terms or {} %}
+    {% if terms %}
+    <ul class="mt-2 divide-y divide-slate-100 rounded border border-slate-200 text-xs">
+      {% for key, items in terms.items() %}{% for t in items %}
+      <li class="p-2">
+        <div class="flex items-center gap-2"><span class="w-24 shrink-0 uppercase text-slate-500">{{ key.replace('_',' ') }}</span><span class="text-slate-800">{{ t.value }}{% if t.numeric_pct %} ({{ t.numeric_pct }}%){% endif %}{% if t.applies_to %} — <em>{{ t.applies_to }}</em>{% endif %}</span><span class="ml-auto rounded px-1.5 {% if t.status == 'ok' %}bg-emerald-100 text-emerald-800{% else %}bg-amber-100 text-amber-800{% endif %}">{{ t.status.replace('_',' ') }}</span></div>
+        {% if t.evidence %}<div class="mt-0.5 pl-24 text-slate-500 font-mono">{{ t.evidence.file_name }} · {{ t.evidence.location }} · “{{ t.evidence.snippet }}”{% if t.evidence.verified %} ✓{% else %} ✗{% endif %}</div>{% endif %}
+      </li>
+      {% endfor %}{% endfor %}
+    </ul>
+    {% else %}<div class="mt-1 text-xs text-slate-500">No commercial terms found.</div>{% endif %}
+  </section>
+
+  {% if vrow.notes %}<section><h3 class="font-medium">Extractor notes</h3><p class="mt-1 text-xs text-slate-700">{{ vrow.notes }}</p></section>{% endif %}
+  {% if vrow.grounding %}<div class="text-xs text-slate-500">Evidence grounding: {{ vrow.grounding.verified }}/{{ vrow.grounding.checked }} snippets found verbatim in source; {{ vrow.grounding.downgraded }} values downgraded to needs review.</div>{% endif %}
+{% include "partials/drawer_close.html" %}

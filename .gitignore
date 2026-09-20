@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+data/store/
+__pycache__/
+*.pyc
+.venv/
+.vercel/
+uploads/
+terminals/
+*.egg-info/

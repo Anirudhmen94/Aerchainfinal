@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Award · {{ state.rfx.title }}{% endblock %}
+{% block content %}
+{% set rec = state.recommendation %}
+<div class="flex flex-wrap items-start justify-between gap-4">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight">Award recommendation</h1>
+    <p class="mt-1 text-sm text-slate-600">What you will export and defend. Numbers from the engine, narrative from the analyst, every value traceable to a vendor document.</p>
+  </div>
+  <div class="flex flex-wrap items-center gap-2">
+    <a href="/rfx/{{ state.id }}/ai-log" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50">AI call log ({{ state.ai_log|length }})</a>
+    <a href="/rfx/{{ state.id }}/outbox" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50">Outbox ({{ state.outbox|length }})</a>
+    <a href="/rfx/{{ state.id }}/memo.md" class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50">Memo (.md)</a>
+    <a href="/rfx/{{ state.id }}/export.xlsx" class="rounded-lg bg-slate-900 text-white px-4 py-2 text-sm font-medium hover:bg-slate-800">Export award workbook</a>
+  </div>
+</div>
+
+<div class="mt-6 grid lg:grid-cols-3 gap-6">
+  <section class="lg:col-span-2 space-y-6">
+    <div class="rounded-lg border border-slate-200 bg-white">
+      <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+        <span class="font-medium">Saved recommendation</span>
+        {% if rec %}<span class="text-xs text-slate-500">saved {{ rec.saved_at[:16].replace('T',' ') }} UTC</span>{% endif %}
+      </div>
+      {% if rec %}
+      <div class="px-4 py-3">
+        <div class="text-xs text-slate-500 mb-2">In answer to: “{{ rec.question }}”</div>
+        <div class="prose-sm text-sm text-slate-800">{{ rec.answer | md | safe }}</div>
+        {% if rec.caveats %}<ul class="mt-3 list-disc pl-5 text-xs text-amber-900 space-y-0.5">{% for c in rec.caveats %}<li>{{ c }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+      {% else %}
+      <div class="px-4 py-8 text-center text-sm text-slate-500">No recommendation saved yet. <a href="/rfx/{{ state.id }}/ask" class="underline">Ask the analyst</a> for a decision, then click “Save as award recommendation” under the answer.</div>
+      {% endif %}
+    </div>
+
+    {% if split %}
+    <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+      <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+        <span class="font-medium">Cheapest-per-line split (usable quotes only)</span>
+        <span class="text-sm font-semibold tabular-nums">{{ split.total_extended_inr|inr }} / yr</span>
+      </div>
+      <div class="px-4 py-3 flex flex-wrap gap-2 text-xs">
+        {% for name, s in split.share_by_vendor.items() %}<span class="rounded bg-slate-100 px-2 py-1">{{ name }}: {{ s.lines }} lines · {{ s.extended_inr|inr }}</span>{% endfor %}
+        {% if split.uncovered_lines %}<span class="rounded bg-rose-100 text-rose-800 px-2 py-1">No usable quote: lines {{ split.uncovered_lines|join(', ') }}</span>{% endif %}
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-xs">
+          <thead class="bg-slate-50 text-slate-600"><tr><th class="px-2 py-1.5 text-left">#</th><th class="px-2 py-1.5 text-left">Line</th><th class="px-2 py-1.5 text-right">Qty</th><th class="px-2 py-1.5 text-left">Award to</th><th class="px-2 py-1.5 text-right">₹/pc</th><th class="px-2 py-1.5 text-right">Extended</th><th class="px-2 py-1.5 text-left">Runner-up</th><th class="px-2 py-1.5 text-right">Gap</th></tr></thead>
+          <tbody class="divide-y divide-slate-100">
+            {% for r in split.rows %}
+            <tr class="{% if not r.winner %}bg-rose-50{% endif %}">
+              <td class="px-2 py-1 text-slate-500">{{ r.line_no }}</td>
+              <td class="px-2 py-1 truncate max-w-[280px]">{{ r.description }}</td>
+              <td class="px-2 py-1 text-right tabular-nums">{{ r.annual_qty|num }}</td>
+              <td class="px-2 py-1">{{ r.winner or 'no usable quote' }}</td>
+              <td class="px-2 py-1 text-right tabular-nums">{% if r.unit_inr is not none %}{{ '%.2f'|format(r.unit_inr) }}{% endif %}</td>
+              <td class="px-2 py-1 text-right tabular-nums">{{ r.extended_inr|inr if r.extended_inr is not none else '' }}</td>
+              <td class="px-2 py-1 text-slate-600">{{ r.runner_up or '' }}</td>
+              <td class="px-2 py-1 text-right tabular-nums text-slate-600">{% if r.gap_pct is not none %}+{{ r.gap_pct }}%{% endif %}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  <aside class="space-y-6">
+    <div class="rounded-lg border border-slate-200 bg-white">
+      <div class="px-4 py-3 border-b border-slate-200 font-medium">Data quality</div>
+      <ul class="px-4 py-3 text-xs space-y-2">
+        {% for v in cmp.vendors %}
+        <li>
+          <div class="font-medium text-slate-800">{{ v.name }}</div>
+          <div class="text-slate-600">usable {{ v.usable }}/{{ cmp.line_count }} · review {{ v.counts.needs_review }} · unresolved {{ v.counts.unresolved }} · missing {{ v.counts.missing }} · questionnaire {{ v.questionnaire.overall.replace('_',' ') }}{% if v.commercial.freight_extra %} · freight extra{% endif %}</div>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white">
+      <div class="px-4 py-3 border-b border-slate-200 font-medium">Buyer review log ({{ state.reviews|length }})</div>
+      {% if state.reviews %}
+      <ul class="px-4 py-3 text-xs space-y-2">
+        {% for r in state.reviews %}<li><span class="text-slate-500">{{ r.at[:16].replace('T',' ') }}</span> · {{ r.vendor_name }} L{{ r.line_no }} · <strong>{{ r.action }}</strong>{% if r.value_inr is not none %} → ₹{{ r.value_inr }}{% endif %}<div class="text-slate-600">{{ r.note }}</div></li>{% endfor %}
+      </ul>
+      {% else %}<div class="px-4 py-3 text-xs text-slate-500">No cells accepted or overridden. Flagged cells stay excluded from totals.</div>{% endif %}
+    </div>
+    <div class="rounded-lg border border-slate-200 bg-white">
+      <div class="px-4 py-3 border-b border-slate-200 font-medium">Exports</div>
+      <ul class="px-4 py-3 text-xs space-y-1.5">
+        <li><a href="/rfx/{{ state.id }}/export.xlsx" class="underline">Award workbook (.xlsx)</a>: Summary, Award by line, Comparison (colour-coded, conversion notes as comments), Flags, Vendors, Evidence index, Review log</li>
+        <li><a href="/rfx/{{ state.id }}/memo.md" class="underline">Award memo (.md)</a>: one-page narrative with caveats</li>
+        <li><a href="/rfx/{{ state.id }}/export.csv" class="underline">Comparison (.csv)</a>: long format, one row per line × vendor</li>
+      </ul>
+    </div>
+  </aside>
+</div>
+{% endblock %}

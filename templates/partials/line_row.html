@@ -1,0 +1,17 @@
+<tr id="line-{{ li.line_no }}" class="{% if saved %}bg-emerald-50{% endif %} align-top">
+  <td class="px-2 py-1.5 text-slate-500">{{ li.line_no }}</td>
+  <td class="px-2 py-1.5 font-mono text-xs">{{ li.sku }}</td>
+  <td class="px-2 py-1.5">
+    <form hx-post="/rfx/{{ state.id }}/line/{{ li.line_no }}" hx-target="#line-{{ li.line_no }}" hx-swap="outerHTML" class="flex flex-col gap-1">
+      <input name="description" value="{{ li.description }}" class="w-full rounded border border-transparent hover:border-slate-300 focus:border-slate-900 bg-transparent px-1 py-0.5 text-sm">
+      <div class="text-xs text-slate-500">{{ li.board }} &middot; {{ li.flute }} flute &middot; {{ li.dimensions }} &middot; {{ li.print }}{% if li.notes %} &middot; {{ li.notes }}{% endif %}</div>
+      <div class="flex items-center gap-2 text-xs">
+        <label class="text-slate-500">GSM <input name="gsm" type="number" value="{{ li.gsm }}" class="w-16 rounded border border-slate-200 px-1 py-0.5"></label>
+        <label class="text-slate-500">Qty/yr <input name="annual_qty" type="number" value="{{ li.annual_qty }}" class="w-24 rounded border border-slate-200 px-1 py-0.5"></label>
+        <span class="text-slate-400" title="Nominal RSC blank weight from dimensions and GSM; used only to convert per-kg quotes">~{{ li.nominal_weight_g }} g/pc</span>
+        <button class="ml-auto rounded bg-slate-100 hover:bg-slate-200 px-2 py-0.5">Save</button>
+      </div>
+    </form>
+  </td>
+  <td class="px-2 py-1.5 text-right tabular-nums">{{ li.annual_qty | num }}</td>
+</tr>

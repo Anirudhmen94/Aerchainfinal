@@ -1,0 +1,93 @@
+{% set drawer_kicker = v.name ~ ' · line ' ~ line.line_no ~ ' · ' ~ line.sku %}
+{% set drawer_title = line.description %}
+{% include "partials/drawer_open.html" %}
+  {% set status_cls = {'ok':'bg-emerald-100 text-emerald-800','converted':'bg-sky-100 text-sky-800','reviewed':'bg-violet-100 text-violet-800','needs_review':'bg-amber-100 text-amber-800','unresolved':'bg-rose-100 text-rose-800','missing':'bg-slate-100 text-slate-600','not_extracted':'bg-slate-100 text-slate-600'} %}
+  <div class="flex flex-wrap items-center gap-2">
+    <span class="rounded px-2 py-0.5 text-xs font-medium {{ status_cls[cell.status] }}">{{ cell.status.replace('_',' ') }}</span>
+    {% for f in cell.flags %}<span class="rounded bg-slate-100 text-slate-700 px-2 py-0.5 text-xs">{{ f.replace('_',' ') }}</span>{% endfor %}
+    {% if cell.confidence is not none %}<span class="ml-auto text-xs text-slate-500">model confidence {{ (cell.confidence*100)|round|int }}%</span>{% endif %}
+  </div>
+
+  <div class="grid grid-cols-2 gap-3">
+    <div class="rounded border border-slate-200 p-3">
+      <div class="text-xs uppercase text-slate-500">As written by vendor</div>
+      <div class="mt-1 text-lg font-semibold tabular-nums">{% if cell.raw_price is not none %}{{ cell.raw_price }} <span class="text-sm font-normal text-slate-600">{{ cell.currency or '(currency not stated)' }} {{ cell.basis.replace('per_','per ') if cell.basis else '' }}{% if cell.basis_qty %} of {{ cell.basis_qty|int }}{% endif %}</span>{% else %}—{% endif %}</div>
+      {% if cell.vendor_description %}<div class="mt-1 text-xs text-slate-600">“{{ cell.vendor_description }}”{% if cell.vendor_item_ref %} · ref {{ cell.vendor_item_ref }}{% endif %}</div>{% endif %}
+    </div>
+    <div class="rounded border border-slate-200 p-3">
+      <div class="text-xs uppercase text-slate-500">Normalised (INR per piece)</div>
+      <div class="mt-1 text-lg font-semibold tabular-nums">{% if cell.unit_inr is not none %}₹{{ '%.2f'|format(cell.unit_inr) }}{% elif cell.unit_inr_candidate is defined and cell.unit_inr_candidate is not none %}<span class="text-amber-700">₹{{ '%.2f'|format(cell.unit_inr_candidate) }}?</span>{% else %}<span class="text-slate-400">not usable</span>{% endif %}</div>
+      {% if cell.conversion %}<div class="mt-1 text-xs text-slate-600 font-mono leading-snug">{{ cell.conversion }}</div>{% endif %}
+      {% if cell.unit_inr is not none %}<div class="mt-1 text-xs text-slate-500">× {{ line.annual_qty|num }} pcs/yr = {{ (cell.unit_inr*line.annual_qty)|inr }}</div>{% endif %}
+    </div>
+  </div>
+
+  {% if cell.reason %}
+  <div class="rounded border border-amber-200 bg-amber-50 text-amber-900 p-3 text-xs"><strong>Why flagged:</strong> {{ cell.reason }}</div>
+  {% endif %}
+
+  {% if ev %}
+  <section>
+    <div class="flex items-center justify-between">
+      <h3 class="font-medium">Source evidence</h3>
+      <span class="text-xs {% if ev.verified %}text-emerald-700{% else %}text-rose-700{% endif %}">{% if ev.verified %}✓ snippet found verbatim in file{% else %}✗ snippet NOT found verbatim (match {{ ev.match_score }}){% endif %}</span>
+    </div>
+    <div class="mt-2 rounded border border-slate-200 bg-slate-50 p-3">
+      <div class="text-xs text-slate-500">{{ ev.file_name }} · <span class="font-mono">{{ ev.location }}</span></div>
+      <blockquote class="mt-1 border-l-4 border-amber-400 pl-3 text-sm font-mono whitespace-pre-wrap">{{ ev.snippet }}</blockquote>
+    </div>
+    {% if file %}
+      {% if file.kind == 'pdf' %}
+        <img src="/rfx/{{ state.id }}/evidence-image/{{ v.vendor_id }}/{{ file.file_id }}?q={{ ev.snippet|urlencode }}" alt="Page with highlight" class="mt-3 rounded border border-slate-200 w-full" loading="lazy">
+      {% elif file.kind == 'image' %}
+        <img src="{{ file.url }}" alt="{{ file.name }}" class="mt-3 rounded border border-slate-200 w-full">
+        <div class="mt-1 text-xs text-slate-500">Photograph as received. The snippet above is from the vision model's transcription of it.</div>
+      {% endif %}
+      {% if ctx %}
+      <div class="mt-3">
+        <div class="text-xs uppercase text-slate-500 mb-1">In context (anchored text)</div>
+        <pre class="rounded border border-slate-200 p-2 text-xs font-mono whitespace-pre-wrap leading-relaxed">{% for l in ctx %}<span class="{% if l.hit %}bg-amber-200{% endif %}">{{ l.text }}</span>
+{% endfor %}</pre>
+      </div>
+      {% endif %}
+      <div class="mt-2 text-xs"><a href="{{ file.url }}" target="_blank" class="underline">Open original file</a> · <button hx-get="/rfx/{{ state.id }}/vendor/{{ v.vendor_id }}/text/{{ file.file_id }}" hx-target="#drawer-root" class="underline">full extracted text</button></div>
+    {% endif %}
+  </section>
+  {% elif cell.status == 'missing' %}
+  <div class="rounded border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">The extractor found no price for this line anywhere in {{ v.name }}'s files. Use “Draft clarification” on the inbox to ask for it.</div>
+  {% endif %}
+
+  {% if others|length > 1 %}
+  <section>
+    <h3 class="font-medium">{{ others|length }} vendor rows map to this line</h3>
+    <ul class="mt-2 space-y-1 text-xs">{% for q in others %}<li class="rounded border border-slate-200 p-2">{{ q.vendor_description }} — {{ q.price }} {{ q.currency }} {{ q.price_basis }} · {{ q.status }} · {{ q.reason }}</li>{% endfor %}</ul>
+  </section>
+  {% endif %}
+
+  {% if cell.candidates %}
+  <div class="text-xs text-slate-600">Model's candidate lines for this row: {{ cell.candidates|join(', ') }}</div>
+  {% endif %}
+
+  {% if cell.status not in ('missing','not_extracted') %}
+  <section class="rounded-lg border border-slate-200 p-3">
+    <h3 class="font-medium">Buyer review</h3>
+    {% if cell.review %}
+      <div class="mt-1 text-xs rounded bg-violet-50 text-violet-900 p-2">
+        <strong>{{ cell.review.action|capitalize }}</strong>{% if cell.review.value_inr is not none %} → ₹{{ cell.review.value_inr }}/pc{% endif %} · {{ cell.review.at[:16].replace('T',' ') }} UTC<br>{{ cell.review.note }}
+      </div>
+      <form hx-post="/rfx/{{ state.id }}/review/{{ v.vendor_id }}/{{ line.line_no }}" hx-target="#review-msg" class="mt-2"><input type="hidden" name="action" value="clear"><button class="text-xs underline text-slate-600">Clear this review</button></form>
+    {% else %}
+      <p class="mt-1 text-xs text-slate-600">Accept the value as usable, or override it with a per-piece INR figure. Both are logged with your note and exported.</p>
+      <form hx-post="/rfx/{{ state.id }}/review/{{ v.vendor_id }}/{{ line.line_no }}" hx-target="#review-msg" class="mt-2 space-y-2 text-xs">
+        <div class="flex flex-wrap gap-3">
+          <label class="inline-flex items-center gap-1"><input type="radio" name="action" value="accept" checked> Accept as usable</label>
+          <label class="inline-flex items-center gap-1"><input type="radio" name="action" value="override"> Override with ₹ <input name="value_inr" class="w-24 rounded border border-slate-300 px-1 py-0.5" placeholder="per pc"></label>
+        </div>
+        <input name="note" required class="w-full rounded border border-slate-300 px-2 py-1" placeholder="Note for the audit log (required), e.g. 'Confirmed by vendor on call 19 Sep'">
+        <button class="rounded bg-slate-900 text-white px-3 py-1.5">Save review</button>
+      </form>
+    {% endif %}
+    <div id="review-msg" class="mt-2"></div>
+  </section>
+  {% endif %}
+{% include "partials/drawer_close.html" %}

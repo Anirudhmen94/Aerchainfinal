@@ -1,0 +1,16 @@
+{% set drawer_kicker = v.name ~ ' · read via ' ~ t.method %}
+{% set drawer_title = f.name %}
+{% include "partials/drawer_open.html" %}
+  {% if t.legibility is defined and t.legibility is not none %}
+  <div class="rounded border border-amber-200 bg-amber-50 text-amber-900 p-3 text-xs">
+    This is a vision-model transcription of a photograph, not machine-readable text. Legibility {{ (t.legibility*100)|round|int }}%.
+    {% if t.caveats %}<div class="mt-1">Transcriber caveats: {{ t.caveats }}</div>{% endif %}
+  </div>
+  {% endif %}
+  {% if t.error %}<div class="rounded border border-rose-200 bg-rose-50 text-rose-800 p-3 text-xs">{{ t.error }}</div>{% endif %}
+  {% if f.kind == 'image' %}<img src="{{ f.url }}" alt="{{ f.name }}" class="rounded border border-slate-200 max-h-96 object-contain">{% endif %}
+  <div>
+    <div class="text-xs uppercase text-slate-500 mb-1">Anchored text the extractor was given</div>
+    <pre class="rounded bg-slate-50 border border-slate-200 p-3 text-xs whitespace-pre-wrap font-mono leading-relaxed max-h-[70vh] overflow-auto">{{ t.text or '(nothing readable)' }}</pre>
+  </div>
+{% include "partials/drawer_close.html" %}

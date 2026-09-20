@@ -1,0 +1,14 @@
+{% set drawer_kicker = 'Clarification request · ' ~ v.name %}
+{% set drawer_title = draft.subject %}
+{% include "partials/drawer_open.html" %}
+  {% if draft.points %}
+  <div class="rounded border border-emerald-200 bg-emerald-50 text-emerald-900 p-3 text-xs">Drafted by the model from {{ draft.points|length }} open points detected by the engine, and placed in the <a href="/rfx/{{ state.id }}/outbox" class="underline">outbox</a> (delivery stubbed).</div>
+  {% endif %}
+  <pre class="rounded bg-slate-50 border border-slate-200 p-3 text-sm whitespace-pre-wrap font-sans leading-relaxed">{{ draft.body }}</pre>
+  {% if draft.points %}
+  <details>
+    <summary class="cursor-pointer text-xs text-slate-500">Open points the engine detected ({{ draft.points|length }})</summary>
+    <ul class="mt-2 list-disc pl-5 text-xs text-slate-600 space-y-1">{% for p in draft.points %}<li>{{ p }}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+{% include "partials/drawer_close.html" %}

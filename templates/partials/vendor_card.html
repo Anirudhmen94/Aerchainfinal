@@ -1,0 +1,71 @@
+{% set ext = v.extraction %}
+<div id="vendor-{{ v.vendor_id }}" data-vendor-id="{{ v.vendor_id }}" data-vendor-pending="{{ '1' if v.files and v.status != 'extracted' else '0' }}"
+     class="rounded-lg border bg-white flex flex-col {% if v.status == 'error' %}border-rose-300{% elif v.status == 'extracted' %}border-emerald-300{% else %}border-slate-200{% endif %}">
+  <div class="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-2">
+    <div class="min-w-0">
+      <div class="font-medium truncate">{{ v.name }}</div>
+      <div class="text-xs text-slate-500 truncate">{{ v.city }}{% if v.email %} &middot; {{ v.email }}{% endif %}{% if v.received_at %} &middot; received {{ v.received_at[:10] }}{% endif %}</div>
+    </div>
+    <span data-role="status" class="shrink-0 inline-flex rounded-full px-2 py-0.5 text-xs border
+      {% if v.status == 'extracted' %}bg-emerald-50 text-emerald-700 border-emerald-200{% elif v.status == 'error' %}bg-rose-50 text-rose-700 border-rose-200{% elif v.status == 'received' %}bg-amber-50 text-amber-700 border-amber-200{% elif v.status == 'extracting' %}bg-sky-50 text-sky-700 border-sky-200{% else %}bg-slate-100 text-slate-600 border-slate-200{% endif %}">
+      {% if v.status == 'extracted' %}Read{% elif v.status == 'received' %}Unread{% elif v.status == 'awaiting' %}Awaiting reply{% else %}{{ v.status|capitalize }}{% endif %}
+    </span>
+  </div>
+  <div class="px-4 py-3 text-sm flex-1">
+    {% if v.files %}
+    <ul class="space-y-1.5">
+      {% for f in v.files %}
+      <li class="flex items-center gap-2 min-w-0">
+        <span class="inline-flex w-12 justify-center rounded bg-slate-100 text-slate-600 text-[10px] uppercase px-1 py-0.5 shrink-0">{{ f.kind }}</span>
+        <a href="{{ f.url }}" target="_blank" class="truncate hover:underline" title="{{ f.name }}">{{ f.name }}</a>
+        <span class="text-xs text-slate-400 shrink-0">{{ (f.size/1024)|round(0)|int }} KB</span>
+        <button hx-get="/rfx/{{ state.id }}/vendor/{{ v.vendor_id }}/text/{{ f.file_id }}" hx-target="#drawer-root" class="text-xs text-slate-500 hover:text-slate-900 shrink-0" title="See what the system read from this file">text</button>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="text-slate-500">No reply yet.</div>
+    {% endif %}
+
+    {% if v.error %}
+    <div class="mt-3 rounded border border-rose-200 bg-rose-50 text-rose-800 text-xs p-2 break-words">{{ v.error }}</div>
+    {% endif %}
+
+    {% if ext %}
+    {% set nq = ext.line_quotes|length %}
+    {% set nok = ext.line_quotes|selectattr('status','equalto','ok')|list|length %}
+    {% set nrev = ext.line_quotes|selectattr('status','equalto','needs_review')|list|length %}
+    {% set nunr = ext.line_quotes|selectattr('status','equalto','unresolved')|list|length %}
+    <div class="mt-3 grid grid-cols-4 gap-1 text-center text-xs">
+      <div class="rounded bg-emerald-50 text-emerald-800 py-1"><div class="font-semibold">{{ nok }}</div>ok</div>
+      <div class="rounded bg-amber-50 text-amber-800 py-1"><div class="font-semibold">{{ nrev }}</div>review</div>
+      <div class="rounded bg-rose-50 text-rose-800 py-1"><div class="font-semibold">{{ nunr }}</div>unresolved</div>
+      <div class="rounded bg-slate-100 text-slate-700 py-1"><div class="font-semibold">{{ ext.not_quoted_line_nos|length }}</div>not quoted</div>
+    </div>
+    <div class="mt-2 text-xs text-slate-500">
+      Evidence verified {{ ext.grounding.verified }}/{{ ext.grounding.checked }}{% if ext.grounding.downgraded %} &middot; {{ ext.grounding.downgraded }} downgraded{% endif %}
+      &middot; {{ ext.commercials|length }} terms &middot; {{ ext.questionnaire|selectattr('answered')|list|length }}/{{ state.rfx.questionnaire|length }} questions
+    </div>
+    {% if ext.notes %}<div class="mt-2 text-xs text-slate-600 italic">{{ ext.notes }}</div>{% endif %}
+    {% endif %}
+  </div>
+  <div class="px-4 py-2 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs">
+    {% if v.files %}
+    <button hx-post="/rfx/{{ state.id }}/vendor/{{ v.vendor_id }}/extract" hx-target="#vendor-{{ v.vendor_id }}" hx-swap="outerHTML" hx-indicator="#busy-{{ v.vendor_id }}" hx-disabled-elt="this"
+      class="rounded bg-slate-900 text-white px-3 py-1.5 font-medium hover:bg-slate-800 disabled:opacity-50" {% if not ai_ok %}disabled{% endif %}>
+      {% if ext %}Re-read{% else %}Read response{% endif %}
+    </button>
+    <span id="busy-{{ v.vendor_id }}" class="htmx-indicator items-center gap-1 text-slate-600">
+      <svg class="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
+      Reading with {{ model }} (30-90 s)
+    </span>
+    {% endif %}
+    {% if ext %}
+    <button hx-get="/rfx/{{ state.id }}/vendor/{{ v.vendor_id }}/questionnaire" hx-target="#drawer-root" class="rounded border border-slate-300 px-2.5 py-1.5 hover:bg-slate-50">Terms &amp; questionnaire</button>
+    <button hx-post="/rfx/{{ state.id }}/vendor/{{ v.vendor_id }}/clarify" hx-target="#drawer-root" hx-indicator="#busy-{{ v.vendor_id }}" class="rounded border border-slate-300 px-2.5 py-1.5 hover:bg-slate-50">Draft clarification</button>
+    {% endif %}
+    {% if v.format == 'upload' %}
+    <button hx-post="/rfx/{{ state.id }}/vendor/{{ v.vendor_id }}/remove" hx-confirm="Remove this vendor and its files?" class="ml-auto text-slate-400 hover:text-rose-600">Remove</button>
+    {% endif %}
+  </div>
+</div>

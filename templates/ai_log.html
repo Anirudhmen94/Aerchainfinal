@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}AI call log{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between">
+  <h1 class="text-2xl font-semibold tracking-tight">AI call log</h1>
+  <a href="/rfx/{{ state.id }}/award" class="text-sm underline">Back to award</a>
+</div>
+<p class="mt-1 text-sm text-slate-600">Every model call made for this sourcing event. No call, no AI output: if it is not here, the app computed it in code.</p>
+<div class="mt-6 rounded-lg border border-slate-200 bg-white overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr>
+      <th class="px-3 py-2 text-left">When (UTC)</th><th class="px-3 py-2 text-left">Purpose</th><th class="px-3 py-2 text-left">Model</th>
+      <th class="px-3 py-2 text-right">In tokens</th><th class="px-3 py-2 text-right">Out tokens</th><th class="px-3 py-2 text-right">Latency</th><th class="px-3 py-2 text-left">Notes</th>
+    </tr></thead>
+    <tbody class="divide-y divide-slate-100">
+      {% for e in state.ai_log %}
+      <tr>
+        <td class="px-3 py-1.5 whitespace-nowrap text-slate-500">{{ e.at }}</td>
+        <td class="px-3 py-1.5 font-mono text-xs">{{ e.purpose }}</td>
+        <td class="px-3 py-1.5 text-xs">{{ e.model }}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums">{{ e.input_tokens }}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums">{{ e.output_tokens }}</td>
+        <td class="px-3 py-1.5 text-right tabular-nums">{{ e.latency_s }}s</td>
+        <td class="px-3 py-1.5 text-xs text-slate-500">{% if e.attempt and e.attempt > 1 %}retry {{ e.attempt }} · {% endif %}{{ e.stop_reason or '' }}{% if e.vendor %} · {{ e.vendor }}{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="px-3 py-6 text-center text-slate-500">No AI calls yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="mt-3 text-xs text-slate-500">Total: {{ state.ai_log|length }} calls · {{ state.ai_log|sum(attribute='input_tokens') }} input tokens · {{ state.ai_log|sum(attribute='output_tokens') }} output tokens</div>
+{% endblock %}
