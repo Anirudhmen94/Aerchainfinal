@@ -682,38 +682,59 @@ def _haiku_vision(*, path: Path, system: str, user_text: str) -> tuple[str, str]
 
 
 def _safe_json_loads(raw: str) -> dict[str, Any]:
-    """Parse model JSON; tolerate fences and truncated strings without crashing Parse all."""
+    """Parse model JSON; tolerate fences and truncated Claude output."""
     cleaned = _strip_json_fence(raw).strip()
     if not cleaned:
-        raise ValueError("empty model JSON")
-    try:
-        data = json.loads(cleaned)
-        if isinstance(data, dict):
-            return data
-        raise ValueError(f"expected JSON object, got {type(data).__name__}")
-    except json.JSONDecodeError as first:
-        # Attempt common repairs for truncated Claude output
-        repaired = cleaned
-        # close open string + object/array
-        if repaired.count('"') % 2 == 1:
-            repaired += '"'
-        # trim trailing incomplete key fragments after last comma
-        for closer in ('}', ']'):
-            candidate = repaired
-            # balance braces/brackets roughly
-            opens = candidate.count('{') - candidate.count('}')
-            opens_a = candidate.count('[') - candidate.count(']')
-            candidate = candidate + (']' * max(0, opens_a)) + ('}' * max(0, opens))
+        return {
+            "lines": [],
+            "questionnaire_answers": [],
+            "notes": "empty_model_json",
+            "confidence": 0.0,
+        }
+
+    candidates = [cleaned]
+    # If truncated mid-string, close quote then balance braces/brackets
+    if cleaned.count('"') % 2 == 1:
+        candidates.append(cleaned + '"')
+    # Drop trailing incomplete , "key": fragment
+    trimmed = re.sub(r',\s*"[^"]*$', '', cleaned)
+    if trimmed != cleaned:
+        candidates.append(trimmed)
+        if trimmed.count('"') % 2 == 1:
+            candidates.append(trimmed + '"')
+
+    tried: list[str] = []
+    for base in candidates:
+        opens = base.count("{") - base.count("}")
+        opens_a = base.count("[") - base.count("]")
+        balanced = base + ("]" * max(0, opens_a)) + ("}" * max(0, opens))
+        for cand in (base, balanced):
+            if cand in tried:
+                continue
+            tried.append(cand)
             try:
-                data = json.loads(candidate)
-                if isinstance(data, dict):
-                    data.setdefault("notes", "")
-                    data["notes"] = (str(data.get("notes") or "") + " | json_repaired_truncated").strip(" |")
-                    data["confidence"] = min(float(data.get("confidence") or 0.4), 0.45)
-                    return data
+                data = json.loads(cand)
             except json.JSONDecodeError:
                 continue
-        raise first
+            if not isinstance(data, dict):
+                continue
+            if cand != cleaned:
+                note = str(data.get("notes") or "")
+                data["notes"] = (note + " | json_repaired_truncated").strip(" |")
+                try:
+                    data["confidence"] = min(float(data.get("confidence") or 0.4), 0.45)
+                except (TypeError, ValueError):
+                    data["confidence"] = 0.35
+            return data
+
+    # Last resort: do not crash Parse all
+    return {
+        "lines": [],
+        "questionnaire_answers": [],
+        "notes": "json_parse_failed_unrecoverable",
+        "confidence": 0.0,
+        "extraction_notes": cleaned[:500],
+    }
 
 
 def _call_haiku_text(document_text: str, rfx_ctx: dict[str, Any], *, source_name: str) -> dict[str, Any]:

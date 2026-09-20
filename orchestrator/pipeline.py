@@ -366,23 +366,26 @@ class RFxPipeline:
             raise RuntimeError("No RFx loaded.")
         if not self.inbox:
             self.seed_inbox()
-        quotes = parse_all(
-            self._inbox_dir(),
-            rfx=self.rfx,
-            skip_llm=skip_llm or not _has_anthropic(),
-        )
-        # Mark matching inbox rows parsed
-        by_path = {str(Path(m.path).resolve()): m for m in self.inbox}
-        for q in quotes:
-            # best-effort status update
-            for m in self.inbox:
-                if q.vendor_id and (
-                    m.vendor_id == q.vendor_id
-                    or re.sub(r"^V0+", "V", m.vendor_id.upper())
-                    == re.sub(r"^V0+", "V", q.vendor_id.upper())
+        quotes: list[ExtractedQuote] = []
+        errors: list[str] = []
+        # Prefer per-message parse so one bad LLM/json blob cannot abort the batch
+        for msg in list(self.inbox):
+            try:
+                q = parse_one(msg.path, vendor_id=msg.vendor_id or "", rfx=self.rfx)
+                if msg.vendor_id and (
+                    not q.vendor_id or q.vendor_id.upper() in ("UNKNOWN", "")
                 ):
-                    m.status = "parsed"
-                    m.parsed_vendor_id = q.vendor_id
+                    q.vendor_id = msg.vendor_id
+                msg.status = "parsed"
+                msg.parsed_vendor_id = q.vendor_id
+                msg.error = ""
+                quotes.append(q)
+            except Exception as exc:  # noqa: BLE001
+                msg.status = "error"
+                msg.error = str(exc)
+                errors.append(f"{msg.filename or msg.msg_id}: {exc}")
+        if not quotes and errors:
+            raise RuntimeError("; ".join(errors[:3]))
         self.quotes = quotes
         self.step = "parsed"
         self.wizard_step = "inbox"
