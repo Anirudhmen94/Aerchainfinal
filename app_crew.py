@@ -92,12 +92,59 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         if bits:
             evidence_by_vendor[q.vendor_id] = " | ".join(bits)[:400]
 
+    # Premade Ask chips — assignment VP question + ugly-edge / hard cases.
+    # Labels are short; `q` is the full prompt sent to the live analyst (never hardcoded answers).
     suggested_questions = [
-        "Cheapest per line among qualified vendors?",
-        "Where are the gaps and uncertain cells?",
-        "Which vendors failed knockouts and why?",
-        "Give an award recommendation I can defend to a VP.",
-        "Show me USD / UOM conversions that changed the matrix.",
+        {
+            "label": "VP: split cheapest / qualified only",
+            "q": (
+                "What if we split the award, cheapest per line, but only among vendors "
+                "who cleared the quality questionnaire?"
+            ),
+        },
+        {
+            "label": "Partial coverage (27 of 30)",
+            "q": (
+                "Which vendors quoted fewer than the full line list, which lines are missing, "
+                "and how should that affect a defensible award?"
+            ),
+        },
+        {
+            "label": "USD quotes & conversion",
+            "q": (
+                "Which vendors quoted in USD, how were those prices converted to INR per piece, "
+                "and what caveats should a buyer see?"
+            ),
+        },
+        {
+            "label": "Per-box vs per-100 UOM",
+            "q": (
+                "Where do unit-of-measure mismatches appear (per box, per 100 pieces, per kg, "
+                "per bundle), what was converted vs left as uom_mismatch, and what is still uncertain?"
+            ),
+        },
+        {
+            "label": "When we are not sure",
+            "q": (
+                "Show every cell or vendor answer the system is not sure about "
+                "(uncertain, needs review, missing evidence, or low confidence) and explain "
+                "what the buyer should do before awarding."
+            ),
+        },
+        {
+            "label": "Knockout failures",
+            "q": (
+                "Which vendors failed quality questionnaire knockouts, on which questions, "
+                "and confirm they must be excluded from a quality-gated award?"
+            ),
+        },
+        {
+            "label": "Defendable award to VP",
+            "q": (
+                "Give a defensible award recommendation I can take to a VP: split vs single-vendor, "
+                "totals among questionnaire-cleared vendors only, and the main risks."
+            ),
+        },
     ]
 
     shortlist_rows = pipe.shortlist() if pipe.comparison else []

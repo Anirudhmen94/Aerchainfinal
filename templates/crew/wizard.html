@@ -517,11 +517,13 @@
     {% endif %}
   </div>
 
-  <div class="flex flex-wrap gap-2">
+  <div class="mb-1 text-xs font-medium text-slate-500 uppercase tracking-wide">Premade — assignment VP &amp; hard cases</div>
+  <div class="flex flex-wrap gap-2 mb-3">
     {% for s in suggested_questions %}
-    <button type="button" class="chip chip-info hover:ring-1 hover:ring-indigo-300"
+    <button type="button" class="chip chip-info hover:ring-1 hover:ring-indigo-300 text-left"
             onclick="(function(btn){var i=document.getElementById('ask-q'); i.value=btn.getAttribute('data-q'); i.focus();})(this)"
-            data-q="{{ s }}">{{ s }}</button>
+            data-q="{{ s.q if s is mapping else s }}"
+            title="{{ s.q if s is mapping else s }}">{{ s.label if s is mapping else s }}</button>
     {% endfor %}
   </div>
 
