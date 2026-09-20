@@ -51,11 +51,51 @@
   </section>
 
   <section class="mb-4">
-    <h4 class="font-medium text-sm mb-2">Source evidence</h4>
+    <div class="flex items-center justify-between gap-2 mb-2">
+      <h4 class="font-medium text-sm">Source document</h4>
+      {% if evidence.source_kind %}
+      <span class="chip text-[10px] uppercase tracking-wide">{{ evidence.source_kind }}</span>
+      {% endif %}
+    </div>
     <div class="rounded border border-slate-200 bg-slate-50 p-3 mb-2">
-      <div class="text-[10px] uppercase tracking-wide text-slate-500">File parsed</div>
+      <div class="text-[10px] uppercase tracking-wide text-slate-500">File</div>
       <div class="font-medium text-xs break-all">{{ evidence.source_file or 'Source file not recorded' }}</div>
     </div>
+
+    {% set kind = evidence.source_kind or 'unknown' %}
+    {% set src_url = evidence.source_url or '' %}
+
+    {% if src_url and kind == 'image' %}
+      <img src="{{ src_url }}" alt="{{ evidence.source_file }}"
+           class="evidence-source-media rounded border border-slate-200 w-full bg-white" loading="lazy">
+      <div class="mt-1 text-xs text-slate-500">Photograph / image as received. Snippets below come from the vision extraction.</div>
+    {% elif src_url and kind == 'pdf' %}
+      <iframe src="{{ src_url }}" title="PDF preview" class="evidence-source-frame rounded border border-slate-200 w-full bg-white"></iframe>
+      <div class="mt-1 text-xs text-slate-500">Embedded PDF. Use Open original if the browser blocks inline view.</div>
+    {% elif kind in ('email', 'text') %}
+      {% if evidence.source_preview_text %}
+      <pre class="evidence-source-pre rounded border border-slate-200 bg-white p-2 text-xs font-mono whitespace-pre-wrap leading-relaxed">{{ evidence.source_preview_text }}</pre>
+      {% else %}
+      <p class="text-xs text-slate-500">No text preview available for this file.</p>
+      {% endif %}
+    {% elif kind in ('xlsx', 'docx', 'json', 'csv') %}
+      <div class="rounded border border-dashed border-slate-300 bg-white p-3 text-xs text-slate-600">
+        <strong class="text-slate-800">{{ kind|upper }}</strong> — full Office / table render is not shown here.
+        Download the original and use the snippets below for the extracted lines.
+      </div>
+    {% elif evidence.source_file %}
+      <div class="text-xs text-slate-500">Preview not available for this file type. Open the original below.</div>
+    {% endif %}
+
+    {% if src_url %}
+    <div class="mt-2 text-xs">
+      <a href="{{ src_url }}" target="_blank" rel="noopener" class="underline text-indigo-700 font-medium">Open original</a>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="mb-4">
+    <h4 class="font-medium text-sm mb-2">Source evidence</h4>
     {% if evidence.snippets %}
       {% for s in evidence.snippets %}
       <div class="evidence-snippet">

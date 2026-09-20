@@ -8,6 +8,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+import mimetypes
 from pathlib import Path
 from typing import Any, Optional
 
@@ -16,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, File, Form, Request, UploadFile  # noqa: E402
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response  # noqa: E402
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response  # noqa: E402
 from fastapi.templating import Jinja2Templates  # noqa: E402
 
 from agents.qualification import eligibility_gaps, questionnaire_matrix  # noqa: E402
@@ -974,6 +975,7 @@ def crew_award_print(request: Request, rfx_id: str):
 
 
 
+
 @app.get("/crew/{rfx_id}/evidence", response_class=HTMLResponse)
 def crew_evidence(request: Request, rfx_id: str, line_id: str = "", vendor_id: str = ""):
     """Evidence drawer partial for a Compare/Award price cell."""
@@ -988,6 +990,83 @@ def crew_evidence(request: Request, rfx_id: str, line_id: str = "", vendor_id: s
         rfx=pipe.rfx,
         evidence=payload,
     )
+
+
+_CONTENT_TYPES = {
+    "pdf": "application/pdf",
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "txt": "text/plain; charset=utf-8",
+    "eml": "message/rfc822",
+    "csv": "text/csv; charset=utf-8",
+    "json": "application/json",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+def _guess_content_type(path: Path) -> str:
+    ext = path.suffix.lower().lstrip(".")
+    if ext in _CONTENT_TYPES:
+        return _CONTENT_TYPES[ext]
+    guessed, _ = mimetypes.guess_type(str(path))
+    return guessed or "application/octet-stream"
+
+
+@app.get("/crew/{rfx_id}/source-file")
+def crew_source_file(rfx_id: str, vendor_id: str = "", path: str = ""):
+    """Stream the original vendor artifact for the evidence drawer / Open original.
+
+    Authz: only files under this RFX inbox dir or VENDOR_DIR (path-traversal safe
+    via pipeline.resolve_source_path).
+    """
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+    hint = (path or "").strip()
+    resolved = pipe.resolve_source_path(vendor_id, hint=hint) if vendor_id or hint else None
+    if resolved is None and hint:
+        # Basename-only fallback still goes through resolve for authz.
+        resolved = pipe.resolve_source_path(vendor_id or "", hint=hint)
+    if resolved is None or not resolved.is_file():
+        return HTMLResponse(
+            "<div class='err'>Source file not found for this vendor.</div>",
+            status_code=404,
+        )
+    media = _guess_content_type(resolved)
+    return FileResponse(
+        path=str(resolved),
+        media_type=media,
+        filename=resolved.name,
+        content_disposition_type="inline",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/crew/{rfx_id}/source-preview", response_class=HTMLResponse)
+def crew_source_preview(
+    request: Request, rfx_id: str, vendor_id: str = "", line_id: str = ""
+):
+    """Lightweight HTML preview fragment (iframe/img/pre) for a vendor source.
+
+    Prefer the evidence drawer; this endpoint is handy for smoke checks.
+    """
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+    lid = line_id or (pipe.rfx.line_items[0].line_id if pipe.rfx.line_items else "")
+    ev = pipe.evidence_for_cell(lid, vendor_id)
+    return _render(
+        request,
+        "crew/partials/evidence_drawer.html",
+        pipe=pipe,
+        rfx=pipe.rfx,
+        evidence=ev,
+    )
+
 
 
 @app.post("/crew/{rfx_id}/award/notify", response_class=HTMLResponse)

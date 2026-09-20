@@ -96,6 +96,50 @@ def _to_quote(payload: Any, rfx: Optional[RFx] = None) -> ExtractedQuote:
     raise TypeError(f"Cannot coerce quote from {type(payload)!r}")
 
 
+
+def _source_kind_from_name(name: str) -> str:
+    """Map a filename/extension to a coarse source_kind for the evidence drawer."""
+    ext = Path(str(name or "")).suffix.lower().lstrip(".")
+    mapping = {
+        "pdf": "pdf",
+        "png": "image",
+        "jpg": "image",
+        "jpeg": "image",
+        "gif": "image",
+        "webp": "image",
+        "bmp": "image",
+        "tif": "image",
+        "tiff": "image",
+        "eml": "email",
+        "txt": "text",
+        "md": "text",
+        "xlsx": "xlsx",
+        "xls": "xlsx",
+        "docx": "docx",
+        "doc": "docx",
+        "json": "json",
+        "csv": "csv",
+    }
+    return mapping.get(ext, "unknown")
+
+
+def _read_preview_text(path: Path, limit: int = 4096) -> str:
+    """Safe-decode the first ~limit bytes of a text-like vendor artifact."""
+    try:
+        raw = path.read_bytes()[: max(512, int(limit))]
+    except OSError:
+        return ""
+    text = raw.decode("utf-8", errors="replace")
+    # Drop NULs that break HTML <pre>
+    return text.replace("\x00", "")
+
+
+def _looks_like_email(text: str) -> bool:
+    head = (text or "")[:800].lstrip()
+    return bool(re.match(r"(?i)^from:\s*\S", head))
+
+
+
 class RFxPipeline:
     """In-memory crew session for one sourcing event (tab-aware)."""
 
@@ -1357,8 +1401,22 @@ class RFxPipeline:
         except Exception:
             return []
 
+
     def evidence_for_cell(self, line_id: str, vendor_id: str) -> dict[str, Any]:
-        """Assemble evidence drawer payload for one comparison cell."""
+        """Assemble evidence drawer payload for one comparison cell.
+
+        Enrichment includes the underlying vendor artifact (path/url/kind plus a
+        short text preview for email/txt) so Compare can show PDF/image/email
+        media — not just snippets.
+        """
+        # Cold-start: binaries live under /tmp and vanish; re-seed before resolve.
+        try:
+            self._ensure_inbox_files()
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "evidence_for_cell: _ensure_inbox_files failed", exc_info=True
+            )
+
         cell = None
         if self.comparison:
             for c in self.comparison.cells:
@@ -1387,10 +1445,8 @@ class RFxPipeline:
                 sn = str(item.get("snippet") or item.get("text") or "").strip()
                 if not sn:
                     continue
-                # Prefer snippets that mention this line id; keep a few general ones
                 loc = str(item.get("location") or "")
                 snippets.append({"snippet": sn, "location": loc})
-            # Rank: line_id mentions first
             lid = str(line_id).lower()
             snippets.sort(
                 key=lambda s: (0 if lid and lid in s["snippet"].lower() else 1)
@@ -1402,13 +1458,68 @@ class RFxPipeline:
         if not source_file:
             # A missing cell can still have an inbox file worth showing.
             for msg in (self.inbox or []):
-                msg_vid = str(getattr(msg, "parsed_vendor_id", "") or getattr(msg, "vendor_id", "") or "")
+                msg_vid = str(
+                    getattr(msg, "parsed_vendor_id", "")
+                    or getattr(msg, "vendor_id", "")
+                    or ""
+                )
                 if msg_vid == vendor_id:
                     source_file = str(getattr(msg, "path", "") or "")
                     if source_file:
                         break
         if not source_file and quote:
+            # Last resort: source_format is often just "pdf"/"png" — keep for badge.
             source_file = str(getattr(quote, "source_format", "") or "")
+
+        resolved = self.resolve_source_path(vendor_id, hint=source_file)
+        source_path = str(resolved) if resolved else ""
+        source_name = (
+            Path(source_path).name
+            if source_path
+            else (Path(source_file).name if source_file else "")
+        )
+        # Prefer extension of the real file; fall back to quote.source_format.
+        source_kind = _source_kind_from_name(source_name or source_file)
+        if source_kind == "unknown" and quote and getattr(quote, "source_format", None):
+            fmt = str(quote.source_format or "").lower().strip()
+            if fmt in {
+                "pdf",
+                "image",
+                "email",
+                "text",
+                "xlsx",
+                "docx",
+                "json",
+                "csv",
+                "png",
+                "txt",
+            }:
+                source_kind = {
+                    "png": "image",
+                    "txt": "text",
+                }.get(fmt, fmt)
+
+        source_preview_text = ""
+        if resolved and source_kind in {"email", "text", "json", "csv", "unknown"}:
+            source_preview_text = _read_preview_text(resolved, limit=4096)
+            if source_kind == "text" and _looks_like_email(source_preview_text):
+                source_kind = "email"
+            # Cap preview for the drawer (~2–4KB already); trim for template safety.
+            if len(source_preview_text) > 4000:
+                source_preview_text = source_preview_text[:4000] + "\n…"
+
+        # Display label: prefer real filename over bare format token.
+        display_source = source_name or source_file
+
+        rfx_id = self.rfx.rfx_id if self.rfx else ""
+        source_url = ""
+        if rfx_id and vendor_id and (resolved or source_name):
+            from urllib.parse import quote as _urlquote
+
+            source_url = (
+                f"/crew/{_urlquote(rfx_id)}/source-file"
+                f"?vendor_id={_urlquote(vendor_id)}"
+            )
 
         line_desc = ""
         if self.rfx:
@@ -1438,11 +1549,135 @@ class RFxPipeline:
             "original_uom": cell.original_uom if cell else None,
             "flags": flags,
             "fx_uom_note": fx_uom_note,
-            "source_file": source_file,
+            "source_file": display_source,
+            "source_path": source_path,
+            "source_url": source_url,
+            "source_kind": source_kind,
+            "source_preview_text": source_preview_text,
             "snippets": snippets,
             "notes": getattr(quote, "notes", "") if quote else "",
             "confidence": getattr(quote, "confidence", None) if quote else None,
         }
+
+    def resolve_source_path(
+        self, vendor_id: str, *, hint: str = ""
+    ) -> Optional[Path]:
+        """Locate the vendor binary under this RFX inbox (preferred) or VENDOR_DIR.
+
+        Path-traversal safe: only returns files that resolve under the RFX inbox
+        directory or the seeded vendor_responses fixtures.
+        """
+        try:
+            self._ensure_inbox_files()
+        except Exception:
+            pass
+
+        inbox_root: Optional[Path] = None
+        if self.rfx:
+            try:
+                inbox_root = self._inbox_dir()
+            except Exception:
+                inbox_root = None
+
+        allowed_roots: list[Path] = []
+        if inbox_root and inbox_root.exists():
+            allowed_roots.append(inbox_root.resolve())
+        if VENDOR_DIR.exists():
+            allowed_roots.append(VENDOR_DIR.resolve())
+
+        def _safe(path: Path) -> Optional[Path]:
+            try:
+                if not path.is_file():
+                    return None
+                resolved = path.resolve()
+                for root in allowed_roots:
+                    try:
+                        resolved.relative_to(root)
+                        return resolved
+                    except ValueError:
+                        continue
+            except OSError:
+                return None
+            return None
+
+        candidates: list[Path] = []
+
+        # 1) Explicit hint (absolute path or basename from quote meta).
+        hint_s = str(hint or "").strip()
+        if hint_s and hint_s.lower() not in {
+            "pdf",
+            "png",
+            "xlsx",
+            "docx",
+            "txt",
+            "csv",
+            "json",
+            "email",
+            "image",
+            "text",
+            "unknown",
+        }:
+            hp = Path(hint_s)
+            candidates.append(hp)
+            if inbox_root:
+                candidates.append(inbox_root / hp.name)
+            candidates.append(VENDOR_DIR / hp.name)
+            # Strip inbound_ prefix → original fixture name
+            name = hp.name
+            if name.startswith("inbound_"):
+                bare = name[len("inbound_") :]
+                candidates.append(VENDOR_DIR / bare)
+                if inbox_root:
+                    candidates.append(inbox_root / bare)
+
+        # 2) Inbox message path for this vendor.
+        for msg in self.inbox or []:
+            msg_vid = str(
+                getattr(msg, "parsed_vendor_id", "")
+                or getattr(msg, "vendor_id", "")
+                or ""
+            )
+            if msg_vid != vendor_id:
+                continue
+            mp = str(getattr(msg, "path", "") or "")
+            if mp:
+                candidates.append(Path(mp))
+                if inbox_root:
+                    candidates.append(inbox_root / Path(mp).name)
+
+        # 3) Filename contains vendor_id (V001 / V01 soft match).
+        vid = (vendor_id or "").upper()
+        soft = re.sub(r"^V0+", "V", vid) if vid else ""
+        search_dirs: list[Path] = []
+        if inbox_root and inbox_root.exists():
+            search_dirs.append(inbox_root)
+        if VENDOR_DIR.exists():
+            search_dirs.append(VENDOR_DIR)
+        for d in search_dirs:
+            try:
+                for p in d.iterdir():
+                    if not p.is_file() or p.name.startswith("."):
+                        continue
+                    if p.name.endswith(".extract.json"):
+                        continue
+                    fname = p.name.upper()
+                    if vid and vid in fname:
+                        candidates.append(p)
+                    elif soft and soft in fname:
+                        candidates.append(p)
+            except OSError:
+                continue
+
+        seen: set[str] = set()
+        for c in candidates:
+            key = str(c)
+            if key in seen:
+                continue
+            seen.add(key)
+            ok = _safe(c)
+            if ok:
+                return ok
+        return None
 
     def notify_awarded_vendors(self) -> list[str]:
         """Stub-write award_notice_*.txt into data/outbox; surface full emails on Outbox."""
