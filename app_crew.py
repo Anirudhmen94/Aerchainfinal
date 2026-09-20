@@ -158,6 +158,52 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         if bits:
             evidence_by_vendor[q.vendor_id] = " | ".join(bits)[:400]
 
+    # Compact source-of-truth rows for Compare. Keep the vendor-level preview
+    # separate from the cell payload so buyers can orient themselves before
+    # opening a particular line.
+    vendor_names = {}
+    if pipe.rfx:
+        vendor_names.update({v.vendor_id: v.name for v in pipe.rfx.vendors})
+    if pipe.comparison:
+        vendor_names.update(pipe.comparison.vendor_names or {})
+    inbox_by_vendor = {}
+    for msg in (getattr(pipe, "inbox", None) or []):
+        vid = str(getattr(msg, "parsed_vendor_id", "") or getattr(msg, "vendor_id", "") or "")
+        if vid and vid not in inbox_by_vendor:
+            inbox_by_vendor[vid] = msg
+    rfx_line_ids = [li.line_id for li in (pipe.rfx.line_items if pipe.rfx else [])]
+    vendor_sources = []
+    for q in pipe.quotes or []:
+        raw_items = [item for item in (q.raw_evidence or []) if isinstance(item, dict)]
+        preview_bits = [
+            str(item.get("snippet") or item.get("text") or "").strip()
+            for item in raw_items
+            if item.get("kind") != "meta" and str(item.get("snippet") or item.get("text") or "").strip()
+        ]
+        preview = evidence_by_vendor.get(q.vendor_id) or " | ".join(preview_bits) or str(q.notes or "")
+        source_file = str(getattr(q, "source_file", "") or "")
+        if not source_file:
+            for item in raw_items:
+                source_file = str(item.get("source_file") or "")
+                if source_file:
+                    break
+        if not source_file and q.vendor_id in inbox_by_vendor:
+            source_file = str(getattr(inbox_by_vendor[q.vendor_id], "path", "") or "")
+        quoted_line_ids = [
+            str(item.get("line_id") or "").strip()
+            for item in (q.lines or [])
+            if str(item.get("line_id") or "").strip() in rfx_line_ids
+        ]
+        first_line_id = quoted_line_ids[0] if quoted_line_ids else (rfx_line_ids[0] if rfx_line_ids else "")
+        vendor_sources.append({
+            "vendor_id": q.vendor_id,
+            "vendor_name": vendor_names.get(q.vendor_id, q.vendor_id),
+            "source_format": str(q.source_format or "unknown"),
+            "source_file": source_file,
+            "preview": preview[:220],
+            "first_line_id": first_line_id,
+        })
+
     # Premade Ask chips — assignment VP question + ugly-edge / hard cases.
     # Labels are short; `q` is the full prompt sent to the live analyst (never hardcoded answers).
     suggested_questions = [
@@ -279,6 +325,7 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "award_summary": pipe.award_summary() if pipe.awards or pipe.award_validation else None,
         "snapshot": pipe.snapshot(),
         "evidence_by_vendor": evidence_by_vendor,
+        "vendor_sources": vendor_sources,
         "suggested_questions": suggested_questions,
         "provisional": provisional,
         "shortlist_pass": shortlist_pass,

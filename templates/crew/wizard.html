@@ -426,7 +426,7 @@
 <section class="card space-y-4">
   <div class="tip-banner no-print" data-tip-key="compare" role="note">
     <span class="tip-icon" aria-hidden="true">i</span>
-    <div class="tip-body"><strong>Compare.</strong> Build the INR matrix, use filters to focus Pass/Fail vendors and cell status, then review the questionnaire. Next: <strong>Ask</strong> or go to <strong>Award</strong>.</div>
+    <div class="tip-body"><strong>Compare.</strong> Build the INR matrix, then click any price or <strong>Source</strong> link to see the vendor file, verbatim snippet, and FX/UOM notes behind it. Next: <strong>Ask</strong> or go to <strong>Award</strong>.</div>
     <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
   </div>
   <div>
@@ -500,8 +500,31 @@
     <span class="status-pill status-uncertain">uncertain</span>
     <span class="status-pill status-uom_mismatch">uom_mismatch</span>
     <span class="status-pill status-missing">missing</span>
-    <span class="text-slate-500">Click a cell for FX/UOM notes + evidence.</span>
+    <span class="text-slate-500"><strong>Source of truth</strong> — click any price to open the vendor file, snippet, FX/UOM notes.</span>
   </div>
+
+  {% if vendor_sources %}
+  <section class="rounded-lg border border-indigo-100 bg-indigo-50/50 p-3" aria-label="Vendor sources">
+    <div class="flex items-center justify-between gap-2 mb-2">
+      <h3 class="font-medium text-sm text-slate-800">Vendor sources</h3>
+      <span class="text-[10px] text-slate-500">Click through to the first line’s evidence</span>
+    </div>
+    <div class="space-y-1.5">
+      {% for source in vendor_sources %}
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-indigo-100 bg-white px-2 py-1.5 text-xs">
+        <span class="font-medium min-w-[8rem]">{{ source.vendor_name }}</span>
+        <span class="chip">{{ source.source_format }}</span>
+        <span class="text-slate-500 truncate flex-1 min-w-[12rem]" title="{{ source.preview or source.source_file }}">{{ source.preview or 'No snippet captured' }}</span>
+        {% if source.first_line_id %}
+        <button type="button" class="text-indigo-700 underline underline-offset-2 whitespace-nowrap"
+                hx-get="/crew/{{ rfx.rfx_id }}/evidence?line_id={{ source.first_line_id }}&vendor_id={{ source.vendor_id }}"
+                hx-target="#evidence-root" hx-swap="innerHTML">Open source</button>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
 
   <div data-compare-filters class="space-y-2">
     <div class="filter-bar no-print">
@@ -554,12 +577,10 @@
               {% set is_pass = vid in (cmp.award_eligible_vendors or cmp.qualified_vendors or pass_vids) %}
               <td data-vendor="{{ vid }}" data-status="{{ st }}" data-pass="{{ '1' if is_pass else '0' }}"
                   class="text-right tabular-nums cell-{{ st }} price-cell {% if not is_pass %}opacity-40{% endif %}"
-                  {% if cell %}
                   hx-get="/crew/{{ rfx.rfx_id }}/evidence?line_id={{ li.line_id }}&vendor_id={{ vid }}"
                   hx-target="#evidence-root"
                   hx-swap="innerHTML"
-                  title="Open evidence"
-                  {% endif %}>
+                  title="Open source of truth for this line and vendor">
                 {% if cell %}
                     {% if cell.unit_price_inr is not none %}
                       ₹{{ '%.2f'|format(cell.unit_price_inr) }}
@@ -570,6 +591,9 @@
                 {% else %}
                   <span class="status-pill status-missing">missing</span>
                 {% endif %}
+                <div><button type="button" class="text-[10px] text-indigo-700 underline underline-offset-2"
+                            hx-get="/crew/{{ rfx.rfx_id }}/evidence?line_id={{ li.line_id }}&vendor_id={{ vid }}"
+                            hx-target="#evidence-root" hx-swap="innerHTML" hx-trigger="click consume">Source ↗</button></div>
               </td>
             {% endfor %}
           </tr>

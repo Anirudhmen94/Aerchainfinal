@@ -1,65 +1,75 @@
 <div class="evidence-backdrop" onclick="document.getElementById('evidence-root').innerHTML=''"></div>
-<aside class="evidence-drawer" role="dialog" aria-label="Price evidence">
+<aside class="evidence-drawer" role="dialog" aria-label="Source of truth">
   <div class="flex items-start justify-between gap-3 mb-3">
     <div>
-      <h3>{{ evidence.line_id }} · {{ evidence.vendor_name }}</h3>
-      <div class="evidence-meta">{{ evidence.line_description }}</div>
+      <div class="text-[10px] uppercase tracking-wide text-indigo-700 font-semibold">Source of truth</div>
+      <h3>Source of truth</h3>
+      <div class="evidence-meta">{{ evidence.line_id }} · {{ evidence.vendor_name }}</div>
+      <div class="text-xs text-slate-600">{{ evidence.line_description or 'No matching RFx line description' }}</div>
     </div>
     <button type="button" class="btn-sec text-xs py-1 px-2"
             onclick="document.getElementById('evidence-root').innerHTML=''">Close</button>
   </div>
 
-  <div class="flex flex-wrap gap-2 mb-3 text-xs">
+  <div class="flex flex-wrap gap-2 mb-4 text-xs">
     <span class="status-pill status-{{ evidence.status }}">{{ evidence.status }}</span>
-    {% if evidence.unit_price_inr is not none %}
-    <span class="chip">₹{{ '%.4g'|format(evidence.unit_price_inr) }} / pc</span>
-    {% endif %}
     {% if evidence.confidence is not none %}
     <span class="chip">confidence {{ '%.2f'|format(evidence.confidence) }}</span>
     {% endif %}
   </div>
 
-  <dl class="text-xs space-y-2 mb-4">
-    <div>
-      <dt class="text-slate-500 uppercase tracking-wide text-[10px]">Source file</dt>
-      <dd class="font-medium break-all">{{ evidence.source_file or '—' }}</dd>
+  <section class="mb-4">
+    <h4 class="font-medium text-sm mb-2">As written by vendor</h4>
+    <div class="rounded border border-slate-200 bg-slate-50 p-3">
+      {% if evidence.original_price is not none %}
+      <div class="text-lg font-semibold tabular-nums">
+        {{ evidence.original_price }}
+        <span class="text-sm font-normal text-slate-600">{{ evidence.original_currency or '(currency not stated)' }}{% if evidence.original_uom %} · per {{ evidence.original_uom }}{% endif %}</span>
+      </div>
+      {% else %}
+      <div class="text-sm text-slate-500">No price found for this line.</div>
+      <div class="mt-1 text-xs text-slate-500">The vendor source is still shown below so you can see which file was parsed.</div>
+      {% endif %}
     </div>
-    {% if evidence.original_price is not none %}
-    <div>
-      <dt class="text-slate-500 uppercase tracking-wide text-[10px]">Original quote</dt>
-      <dd>{{ evidence.original_currency or '?' }} {{ evidence.original_price }}{% if evidence.original_uom %} / {{ evidence.original_uom }}{% endif %}</dd>
-    </div>
-    {% endif %}
-    <div>
-      <dt class="text-slate-500 uppercase tracking-wide text-[10px]">FX / UOM note</dt>
-      <dd>{{ evidence.fx_uom_note or '—' }}</dd>
-    </div>
-    {% if evidence.flags %}
-    <div>
-      <dt class="text-slate-500 uppercase tracking-wide text-[10px]">Flags</dt>
-      <dd>
-        <ul class="list-disc list-inside text-amber-800">
-          {% for f in evidence.flags %}<li>{{ f }}</li>{% endfor %}
-        </ul>
-      </dd>
-    </div>
-    {% endif %}
-  </dl>
+  </section>
 
-  <div class="text-xs font-medium mb-2">Evidence snippets</div>
-  {% if evidence.snippets %}
-    {% for s in evidence.snippets %}
-    <div class="evidence-snippet">
-      <div>{{ s.snippet }}</div>
-      {% if s.location %}<div class="loc">📍 {{ s.location }}</div>{% endif %}
+  <section class="mb-4">
+    <h4 class="font-medium text-sm mb-2">Normalised (INR per piece)</h4>
+    <div class="rounded border border-slate-200 p-3">
+      {% if evidence.unit_price_inr is not none %}
+      <div class="text-lg font-semibold tabular-nums">₹{{ '%.2f'|format(evidence.unit_price_inr) }} <span class="text-sm font-normal text-slate-500">/ piece</span></div>
+      {% else %}
+      <div class="text-sm text-slate-500">Not usable for an INR-per-piece comparison.</div>
+      {% endif %}
+      <div class="mt-2 text-xs text-slate-600"><span class="font-medium">FX / UOM notes:</span> {{ evidence.fx_uom_note or 'No conversion note recorded.' }}</div>
+      {% if evidence.flags %}
+      <ul class="mt-2 list-disc list-inside text-xs text-amber-800">
+        {% for f in evidence.flags %}<li>{{ f }}</li>{% endfor %}
+      </ul>
+      {% endif %}
     </div>
-    {% endfor %}
-  {% else %}
-    <p class="text-xs text-slate-500">No raw evidence snippets for this vendor/line.</p>
-  {% endif %}
+  </section>
+
+  <section class="mb-4">
+    <h4 class="font-medium text-sm mb-2">Source evidence</h4>
+    <div class="rounded border border-slate-200 bg-slate-50 p-3 mb-2">
+      <div class="text-[10px] uppercase tracking-wide text-slate-500">File parsed</div>
+      <div class="font-medium text-xs break-all">{{ evidence.source_file or 'Source file not recorded' }}</div>
+    </div>
+    {% if evidence.snippets %}
+      {% for s in evidence.snippets %}
+      <div class="evidence-snippet">
+        <div>{{ s.snippet }}</div>
+        {% if s.location %}<div class="loc">📍 {{ s.location }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    {% else %}
+      <p class="text-xs text-slate-500">No raw evidence snippet was captured for this line. This may be a missing quote or an extraction that needs review.</p>
+    {% endif %}
+  </section>
 
   {% if evidence.notes %}
-  <div class="mt-3 text-xs text-slate-600"><span class="font-medium">Notes:</span> {{ evidence.notes }}</div>
+  <div class="mb-4 text-xs text-slate-600"><span class="font-medium">Vendor notes:</span> {{ evidence.notes }}</div>
   {% endif %}
 
   <div class="mt-4 pt-3 border-t border-slate-200">

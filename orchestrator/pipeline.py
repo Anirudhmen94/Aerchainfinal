@@ -1347,7 +1347,18 @@ class RFxPipeline:
             )
             snippets = snippets[:8]
             if not source_file:
-                source_file = str(getattr(quote, "source_format", "") or "")
+                source_file = str(getattr(quote, "source_file", "") or "")
+
+        if not source_file:
+            # A missing cell can still have an inbox file worth showing.
+            for msg in (self.inbox or []):
+                msg_vid = str(getattr(msg, "parsed_vendor_id", "") or getattr(msg, "vendor_id", "") or "")
+                if msg_vid == vendor_id:
+                    source_file = str(getattr(msg, "path", "") or "")
+                    if source_file:
+                        break
+        if not source_file and quote:
+            source_file = str(getattr(quote, "source_format", "") or "")
 
         line_desc = ""
         if self.rfx:
