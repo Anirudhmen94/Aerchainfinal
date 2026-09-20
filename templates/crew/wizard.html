@@ -818,21 +818,39 @@
   <div class="mb-1 text-xs font-medium text-slate-500 uppercase tracking-wide">Premade — assignment VP &amp; hard cases
     <span class="tip-q" tabindex="0" role="img" aria-label="Tip: click a chip to fill the question box" data-tip="Click a chip to fill the question box, then Ask.">?</span>
   </div>
-  <div class="flex flex-wrap gap-2 mb-3">
+  <div class="flex flex-wrap gap-2 mb-3" id="ask-chips">
     {% for s in suggested_questions %}
     <button type="button" class="chip chip-info hover:ring-1 hover:ring-indigo-300 text-left"
-            onclick="(function(btn){var i=document.getElementById('ask-q'); i.value=btn.getAttribute('data-q'); i.focus();})(this)"
-            data-q="{{ s.q if s is mapping else s }}"
-            title="{{ s.q if s is mapping else s }}">{{ s.label if s is mapping else s }}</button>
+            data-q="{{ (s.q if s is mapping else s)|e }}"
+            title="{{ (s.q if s is mapping else s)|e }}"
+            >{{ s.label if s is mapping else s }}</button>
     {% endfor %}
   </div>
 
-  <form hx-post="/crew/{{ rfx.rfx_id }}/ask" hx-target="#chat-log" hx-swap="beforeend"
-        class="flex gap-2" onsubmit="setTimeout(()=>this.reset(), 50)">
+  <form id="ask-form" hx-post="/crew/{{ rfx.rfx_id }}/ask" hx-target="#chat-log" hx-swap="beforeend"
+        hx-indicator="#ask-busy" class="flex gap-2"
+        hx-on::after-request="if(event.detail.successful) this.reset()">
     <input id="ask-q" name="question" class="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
            placeholder="e.g. cheapest per line among qualified vendors?" required autocomplete="off" />
     <button class="btn" type="submit" title="Send question to Analyst">Ask</button>
   </form>
+  <p id="ask-busy" class="htmx-indicator text-xs text-indigo-700">Analyst is thinking…</p>
+  <script>
+  (function () {
+    var form = document.getElementById('ask-form');
+    var input = document.getElementById('ask-q');
+    var chips = document.getElementById('ask-chips');
+    if (!form || !input || !chips) return;
+    chips.addEventListener('click', function (ev) {
+      var btn = ev.target.closest('button[data-q]');
+      if (!btn) return;
+      input.value = btn.getAttribute('data-q') || '';
+      input.focus();
+      if (typeof form.requestSubmit === 'function') form.requestSubmit();
+      else form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    });
+  })();
+  </script>
   <div class="flex flex-wrap gap-2">
     <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">← Compare</a>
     <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=award">Open Award →</a>

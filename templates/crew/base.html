@@ -146,7 +146,10 @@
       .no-print { display:none !important; }
       body { background:#fff; }
     }
-  </style>
+  .htmx-indicator{display:none}
+.htmx-request .htmx-indicator{display:inline}
+.htmx-request.htmx-indicator{display:inline}
+</style>
 </head>
 <body class="bg-slate-50 text-slate-900 min-h-screen" {% block body_attrs %}{% endblock %}>
   <header class="border-b border-slate-200 bg-white no-print">
@@ -423,7 +426,10 @@
     // can still rehydrate — never clear LS on failed POSTs.
     document.addEventListener('submit', function (ev) {
       var form = ev.target;
-      if (!form || !form.action) return;
+      if (!form) return;
+      // HTMX owns hx-post/hx-get forms (Ask chat). Do not preventDefault — that breaks live answers.
+      if (form.hasAttribute('hx-post') || form.hasAttribute('hx-get') || form.hasAttribute('hx-put')) return;
+      if (!form.action) return;
       var id = currentRfxId();
       if (!id) return;
       if (form.dataset.aerchainReady === '1') return;

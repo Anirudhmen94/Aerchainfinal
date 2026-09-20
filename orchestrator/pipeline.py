@@ -871,7 +871,23 @@ class RFxPipeline:
 
     def ask(self, question: str) -> dict[str, Any]:
         if not self.comparison:
-            raise RuntimeError("Normalize quotes before asking questions.")
+            turn = {
+                "question": question,
+                "answer": (
+                    "I don't have a comparison matrix loaded yet. "
+                    "Open Compare → Build comparison matrix (after Inbox Parse all), "
+                    "then ask again — I'll ground the answer on live prices and knockouts."
+                ),
+                "data": None,
+                "caveats": ["comparison_missing"],
+                "tool": "guard",
+                "model": None,
+                "raw": {},
+            }
+            self.chat.append(turn)
+            self.wizard_step = "ask"
+            self._persist()
+            return turn
         result = ask_question(
             question,
             self.rfx,
