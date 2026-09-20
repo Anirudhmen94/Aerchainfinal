@@ -24,8 +24,6 @@ We define the product as an **evidence-backed procurement decision system**: est
 |---|---|
 | **Category buyer** (primary) | Drafts the RFx, reviews the comparison, asks “what if,” and makes the award they must defend. |
 | **Category / sourcing manager** | Needs visibility when a buyer wants a failing or incomplete vendor on a line — gets a **notify** in Outbox (not a fake Approve screen) and can review the Audit trail. |
-| **Vendor** (indirect) | Replies in whatever format they already use; no forced portal. Award notices (stub) go only to confirmed winners. |
-| **Reviewer / demo driver** | Needs a public URL, free tabs, and a seeded messy dataset so the story is visible without local setup. |
 
 ---
 
