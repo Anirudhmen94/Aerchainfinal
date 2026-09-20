@@ -927,13 +927,18 @@
           <span class="text-sm text-slate-600">{{ recommended_split.lines_awarded or 0 }} / {{ recommended_split.lines_total or 0 }} lines awarded</span>
         </div>
         {% if recommended_split.by_vendor %}
-        <ul class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-700">
-          {% for b in recommended_split.by_vendor %}
-          <li class="rounded-full bg-white/80 border border-indigo-100 px-2 py-0.5">
-            {{ b.name }} · {{ b.lines }} line{{ 's' if b.lines != 1 else '' }} · ₹{{ '%.0f'|format(b.extended_inr or 0) }}
-          </li>
-          {% endfor %}
-        </ul>
+        <div class="mt-3 h-scroll-wrap" data-h-scroll aria-label="Vendors in recommended split">
+          <button type="button" class="h-scroll-btn" data-h-scroll-prev title="Scroll left" aria-label="Scroll vendors left">‹</button>
+          <div class="h-scroll-track" data-h-scroll-track>
+            {% for b in recommended_split.by_vendor %}
+            <div class="award-vendor-chip" title="{{ b.name }}">
+              <div class="av-name">{{ b.name }}</div>
+              <div class="av-meta">{{ b.lines }} line{{ 's' if b.lines != 1 else '' }} · ₹{{ '%.0f'|format(b.extended_inr or 0) }}</div>
+            </div>
+            {% endfor %}
+          </div>
+          <button type="button" class="h-scroll-btn" data-h-scroll-next title="Scroll right" aria-label="Scroll vendors right">›</button>
+        </div>
         {% endif %}
       </div>
       <div class="flex flex-col gap-2 shrink-0">
@@ -966,34 +971,45 @@
   </div>
   {% endif %}
 
-  {% if shortlist_pass or shortlist_fail %}
+    {% if shortlist_pass or shortlist_fail %}
   <div class="mb-2 space-y-2 no-print">
-    <div class="text-xs font-medium text-slate-600 uppercase tracking-wide">Shortlist (questionnaire Pass)</div>
-    <div class="shortlist-strip">
-      {% for row in shortlist_pass %}
-      <div class="shortlist-card">
-        <div class="font-medium">{{ row.name }}</div>
-        <div class="text-[10px] text-indigo-700">{{ row.vendor_id }} · Pass</div>
-        <div class="cov">{{ (row.coverage * 100)|round(0)|int }}% coverage</div>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="text-xs font-medium text-slate-600 uppercase tracking-wide">Vendors to award (Pass)</div>
+      <span class="text-[10px] text-slate-400">Scroll ← →</span>
+    </div>
+    <div class="h-scroll-wrap" data-h-scroll aria-label="Pass vendors eligible for award">
+      <button type="button" class="h-scroll-btn" data-h-scroll-prev title="Scroll left" aria-label="Scroll vendors left">‹</button>
+      <div class="h-scroll-track shortlist-strip" data-h-scroll-track style="flex-wrap:nowrap">
+        {% for row in shortlist_pass %}
+        <div class="shortlist-card">
+          <div class="font-medium">{{ row.name }}</div>
+          <div class="text-[10px] text-indigo-700">{{ row.vendor_id }} · Pass</div>
+          <div class="cov">{{ (row.coverage * 100)|round(0)|int }}% coverage</div>
+        </div>
+        {% else %}
+        <span class="text-xs text-slate-500">No Pass vendors yet.</span>
+        {% endfor %}
       </div>
-      {% else %}
-      <span class="text-xs text-slate-500">No Pass vendors yet.</span>
-      {% endfor %}
+      <button type="button" class="h-scroll-btn" data-h-scroll-next title="Scroll right" aria-label="Scroll vendors right">›</button>
     </div>
     {% if shortlist_fail %}
     <div class="text-xs font-medium text-slate-500 mt-2">Excluded (Fail)</div>
-    <div class="shortlist-strip">
-      {% for row in shortlist_fail %}
-      <div class="excluded-card" title="Failed questionnaire knockouts">
-        {{ row.name }} · {{ (row.coverage * 100)|round(0)|int }}%
+    <div class="h-scroll-wrap" data-h-scroll aria-label="Fail vendors excluded from award">
+      <button type="button" class="h-scroll-btn" data-h-scroll-prev title="Scroll left" aria-label="Scroll left">‹</button>
+      <div class="h-scroll-track shortlist-strip" data-h-scroll-track style="flex-wrap:nowrap">
+        {% for row in shortlist_fail %}
+        <div class="excluded-card" title="Failed questionnaire knockouts">
+          {{ row.name }} · {{ (row.coverage * 100)|round(0)|int }}%
+        </div>
+        {% endfor %}
       </div>
-      {% endfor %}
+      <button type="button" class="h-scroll-btn" data-h-scroll-next title="Scroll right" aria-label="Scroll right">›</button>
     </div>
     {% endif %}
   </div>
   {% endif %}
 
-  {% if not pipe.comparison %}
+{% if not pipe.comparison %}
   <div class="empty-hint">
     Generate an RFx and parse inbox, then build Compare first.
     <a href="/crew/{{ rfx.rfx_id }}/wizard?step=draft">Draft</a>

@@ -111,6 +111,34 @@
     .provisional-banner { background:#fffbeb; border:1px solid #f59e0b; color:#92400e; border-radius:0.75rem; padding:0.75rem 1rem; font-size:0.875rem; display:flex; gap:0.75rem; align-items:flex-start; }
     .provisional-banner strong { font-weight:600; }
     .shortlist-strip { display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; }
+
+    .h-scroll-wrap { display:flex; align-items:center; gap:0.35rem; }
+    .h-scroll-wrap .h-scroll-btn {
+      flex:0 0 auto; width:2rem; height:2rem; border-radius:9999px;
+      border:1px solid #cbd5e1; background:#fff; color:#334155;
+      font-size:1rem; line-height:1; cursor:pointer;
+      box-shadow:0 1px 2px rgba(15,23,42,.06);
+    }
+    .h-scroll-wrap .h-scroll-btn:hover { background:#f8fafc; border-color:#94a3b8; }
+    .h-scroll-wrap .h-scroll-btn:disabled { opacity:.35; cursor:default; }
+    .h-scroll-track {
+      display:flex; flex-wrap:nowrap; gap:0.5rem; align-items:stretch;
+      overflow-x:auto; scroll-behavior:smooth; -webkit-overflow-scrolling:touch;
+      padding:0.15rem 0.1rem 0.35rem; flex:1; min-width:0;
+      scrollbar-width:thin;
+    }
+    .h-scroll-track .shortlist-card,
+    .h-scroll-track .excluded-card {
+      flex:0 0 auto; min-width:10.5rem; max-width:14rem;
+    }
+    .award-vendor-chip {
+      flex:0 0 auto; min-width:11rem; max-width:16rem;
+      border:1px solid #c7d2fe; background:#fff; border-radius:0.75rem;
+      padding:0.55rem 0.75rem; font-size:0.75rem; color:#1e293b;
+    }
+    .award-vendor-chip .av-name { font-weight:600; font-size:0.8125rem; }
+    .award-vendor-chip .av-meta { color:#64748b; margin-top:0.15rem; }
+
     .shortlist-card { border:1px solid #c7d2fe; background:#eef2ff; color:#312e81; border-radius:0.75rem; padding:0.5rem 0.75rem; font-size:0.75rem; min-width:8rem; }
     .shortlist-card .cov { font-variant-numeric:tabular-nums; color:#4338ca; font-weight:600; }
     .excluded-card { border:1px solid #fecaca; background:#fff1f2; color:#9f1239; border-radius:0.75rem; padding:0.4rem 0.65rem; font-size:0.7rem; }
@@ -531,6 +559,36 @@
       try { window.aerchainDrawAskCharts(ev.target || document); } catch (e) {}
     });
   })();
-  </script>
+  
+  function aerchainBindHScroll(root) {
+    root = root || document;
+    root.querySelectorAll('[data-h-scroll]').forEach(function (wrap) {
+      if (wrap.dataset.hScrollBound === '1') return;
+      wrap.dataset.hScrollBound = '1';
+      var track = wrap.querySelector('[data-h-scroll-track]');
+      var prev = wrap.querySelector('[data-h-scroll-prev]');
+      var next = wrap.querySelector('[data-h-scroll-next]');
+      if (!track || !prev || !next) return;
+      function step() { return Math.max(180, Math.floor(track.clientWidth * 0.7)); }
+      function sync() {
+        var max = track.scrollWidth - track.clientWidth - 2;
+        prev.disabled = track.scrollLeft <= 2;
+        next.disabled = track.scrollLeft >= max;
+      }
+      prev.addEventListener('click', function () {
+        track.scrollBy({ left: -step(), behavior: 'smooth' });
+      });
+      next.addEventListener('click', function () {
+        track.scrollBy({ left: step(), behavior: 'smooth' });
+      });
+      track.addEventListener('scroll', sync, { passive: true });
+      window.addEventListener('resize', sync);
+      sync();
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function () { aerchainBindHScroll(); });
+  document.body.addEventListener('htmx:afterSettle', function () { aerchainBindHScroll(); });
+
+</script>
 </body>
 </html>
