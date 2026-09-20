@@ -27,6 +27,7 @@ from orchestrator.pipeline import (  # noqa: E402
     RFxPipeline,
     STORE_DIR,
     VENDOR_DIR,
+    inbox_email_cards,
     load_pipeline,
 )
 
@@ -347,6 +348,7 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "partial_status_by_line": partial_status_by_line,
         "pending_partials": pending_partials,
         "all_partials": all_partials,
+        "inbox_emails": inbox_email_cards(pipe),
     }
 
 

@@ -290,12 +290,12 @@
 <section class="card space-y-4">
   <div class="tip-banner no-print" data-tip-key="inbox" role="note">
     <span class="tip-icon" aria-hidden="true">i</span>
-    <div class="tip-body"><strong>Inbox.</strong> Seed stub vendor replies (or upload), then <em>Parse all</em>. Next: open <strong>Compare</strong> and build the matrix.</div>
+    <div class="tip-body"><strong>Inbox.</strong> Seed stub vendor replies (or upload), expand an email card to read the body, then <em>Parse all</em>. Stub replies mirror what Parse puts into Compare. Next: open <strong>Compare</strong> and build the matrix.</div>
     <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
   </div>
   <div>
-    <h2 class="font-medium text-lg">Inbox</h2>
-    <p class="section-muted">Receive stub replies, parse into structured quotes.</p>
+    <h2 class="font-medium text-lg">Inbox <span class="text-slate-400 font-normal text-sm">(inbound emails)</span></h2>
+    <p class="section-muted">Receive stub replies, parse into structured quotes. Cards stay aligned with Compare after Parse.</p>
   </div>
 
   <div class="flex flex-wrap gap-2">
@@ -316,6 +316,82 @@
     <button class="btn-sec" type="submit">Upload</button>
   </form>
 
+  {% if inbox_emails %}
+  <div class="space-y-2" data-filter-root>
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <h3 class="text-sm font-medium text-slate-700">Inbound emails
+        <span class="tip-q" tabindex="0" role="img" aria-label="Tip: stub replies mirror Compare" data-tip="After Parse all, each card body is generated from the same quote object Compare uses — prices and questionnaire answers cannot drift.">?</span>
+      </h3>
+      <p class="text-xs text-slate-500">Stub replies mirror what Parse puts into Compare.</p>
+    </div>
+    <div class="filter-bar no-print">
+      <input type="search" data-filter-search placeholder="Search from / subject…" title="Filter inbound emails" aria-label="Search inbound emails" />
+      <select data-filter-vendor title="Filter by vendor" aria-label="Vendor">
+        <option value="all">All vendors</option>
+        {% for v in rfx.vendors %}
+        <option value="{{ v.vendor_id|lower }}">{{ v.vendor_id }} — {{ v.name }}</option>
+        {% endfor %}
+      </select>
+      <select data-filter-format title="Filter by source format" aria-label="Format">
+        <option value="all">All formats</option>
+        {% set email_fmts = [] %}
+        {% for em in inbox_emails %}
+          {% set f = (em.source_format or 'unknown')|lower %}
+          {% if f not in email_fmts %}{% set _ = email_fmts.append(f) %}{% endif %}
+        {% endfor %}
+        {% for f in email_fmts|sort %}
+        <option value="{{ f }}">{{ f }}</option>
+        {% endfor %}
+      </select>
+      <select data-filter-status title="Parsed vs not parsed" aria-label="Status">
+        <option value="all">All status</option>
+        <option value="parsed">Parsed</option>
+        <option value="not_parsed">Not parsed</option>
+        <option value="error">Error</option>
+      </select>
+      <span class="filter-count" data-filter-count></span>
+    </div>
+    <div class="space-y-2">
+      {% for em in inbox_emails %}
+      {% set st = em.status or 'new' %}
+      {% set st_filter = 'parsed' if st == 'parsed' else ('error' if st == 'error' else 'not_parsed') %}
+      <details class="border border-slate-200 rounded-lg"
+               data-filter-row
+               data-vendor="{{ (em.vendor_id or '')|lower }}"
+               data-format="{{ (em.source_format or 'unknown')|lower }}"
+               data-status="{{ st_filter }}"
+               data-search="{{ em.from_name or '' }} {{ em.from_email or '' }} {{ em.subject or '' }} {{ em.vendor_id or '' }} {{ em.source_format or '' }}"
+               {% if loop.first %}open{% endif %}>
+        <summary class="cursor-pointer px-3 py-2 text-sm bg-slate-50 rounded-t-lg flex flex-wrap items-center gap-2">
+          <span class="font-medium">{{ em.subject or '(no subject)' }}</span>
+          <span class="text-slate-500 font-normal">from {{ em.from_name or em.vendor_id }} &lt;{{ em.from_email }}&gt;</span>
+          {% if st == 'parsed' %}<span class="chip chip-ok">parsed</span>
+          {% elif st == 'error' %}<span class="chip chip-bad">error</span>
+          {% else %}<span class="chip">new</span>{% endif %}
+          <span class="chip">{{ em.source_format or 'unknown' }}</span>
+          {% if em.aligned %}<span class="chip chip-info" title="Body generated from the parsed quote">aligned</span>{% endif %}
+        </summary>
+        <div class="px-3 pt-2 text-xs text-slate-500 flex flex-wrap gap-x-4 gap-y-1">
+          <span><span class="font-medium text-slate-600">From</span> {{ em.from_name }} &lt;{{ em.from_email }}&gt;</span>
+          <span><span class="font-medium text-slate-600">To</span> {{ em.to }}</span>
+          <span><span class="font-medium text-slate-600">Date</span> {{ em.date }}</span>
+          {% if em.vendor_id %}<span><span class="font-medium text-slate-600">Vendor</span> {{ em.vendor_id }}</span>{% endif %}
+        </div>
+        <pre class="p-3 text-xs whitespace-pre-wrap overflow-auto max-h-80 border-t border-slate-100 mt-2">{{ em.body }}</pre>
+        {% if em.msg_id and st != 'parsed' %}
+        <div class="px-3 pb-3">
+          <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/parse" class="inline">
+            <input type="hidden" name="msg_id" value="{{ em.msg_id }}" />
+            <button class="btn-sec text-xs py-1" type="submit" title="Parse this message only">Parse</button>
+          </form>
+        </div>
+        {% endif %}
+      </details>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   {% if pipe.inbox %}
   {% set fmt_set = [] %}
   {% for m in pipe.inbox %}
@@ -328,6 +404,9 @@
   {% endfor %}
 
   <div data-filter-root class="space-y-2">
+    <h3 class="text-sm font-medium text-slate-700">Source files
+      <span class="text-slate-400 font-normal">(attachments / uploads)</span>
+    </h3>
     <div class="filter-bar no-print">
       <input type="search" data-filter-search placeholder="Search vendor / subject / file…" title="Filter inbox rows" aria-label="Search inbox" />
       <select data-filter-vendor title="Filter by vendor" aria-label="Vendor">

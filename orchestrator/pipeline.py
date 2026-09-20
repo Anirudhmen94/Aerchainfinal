@@ -139,6 +139,270 @@ def _looks_like_email(text: str) -> bool:
     return bool(re.match(r"(?i)^from:\s*\S", head))
 
 
+_TEXT_LIKE_EXTS = {".txt", ".eml", ".md", ".csv", ".json"}
+_BUYER_TO = "procurement@company.com"
+
+
+def _fmt_money(val: Any) -> str:
+    if val is None or val == "":
+        return "—"
+    try:
+        return f"{float(val):,.2f}"
+    except (TypeError, ValueError):
+        return str(val)
+
+
+def _answer_id(row: dict[str, Any]) -> str:
+    return str(
+        row.get("id")
+        or row.get("question_id")
+        or row.get("qid")
+        or ""
+    ).strip()
+
+
+def _body_from_quote(
+    quote: ExtractedQuote,
+    *,
+    vendor_name: str,
+    rfx_id: str,
+) -> str:
+    """Plain-text vendor reply built from the same ExtractedQuote Compare uses."""
+    line_rows: list[str] = []
+    for ln in quote.lines or []:
+        if not isinstance(ln, dict):
+            continue
+        lid = str(ln.get("line_id") or "").strip() or "?"
+        desc = str(ln.get("description") or "").strip()
+        price = _fmt_money(ln.get("unit_price") if ln.get("unit_price") is not None else ln.get("unit_price_inr"))
+        cur = str(ln.get("currency") or "INR").strip() or "INR"
+        uom = str(ln.get("uom") or "piece").strip() or "piece"
+        desc_bit = f"  {desc}" if desc else ""
+        line_rows.append(f"  {lid:<6}{desc_bit}  →  {price} {cur} / {uom}")
+    lines_block = "\n".join(line_rows) if line_rows else "  (no priced lines extracted)"
+
+    ans_rows: list[str] = []
+    for row in quote.questionnaire_answers or []:
+        if not isinstance(row, dict):
+            continue
+        qid = _answer_id(row) or "?"
+        answer = str(row.get("answer") or "").strip() or "(blank)"
+        ans_rows.append(f"  {qid}: {answer}")
+    answers_block = "\n".join(ans_rows) if ans_rows else "  (no questionnaire answers extracted)"
+
+    notes = str(quote.notes or "").strip()
+    notes_block = notes if notes else "(none)"
+
+    name = vendor_name or quote.vendor_id or "Vendor"
+    rid = rfx_id or "RFx"
+    return (
+        f"Dear Procurement Team,\n\n"
+        f"Thanks for the RFx {rid}. Here is our offer based on the package we reviewed.\n\n"
+        f"── LINE PRICES ──────────────────────────────────────────────────────────\n"
+        f"{lines_block}\n\n"
+        f"── QUESTIONNAIRE ANSWERS ────────────────────────────────────────────────\n"
+        f"{answers_block}\n\n"
+        f"── COMMERCIAL NOTES ────────────────────────────────────────────────────\n"
+        f"{notes_block}\n\n"
+        f"Happy to clarify any line or commercial term.\n\n"
+        f"Regards,\n"
+        f"{name}\n"
+    )
+
+
+def _body_stub_attachment(
+    *,
+    filename: str,
+    vendor_name: str,
+    rfx_id: str,
+) -> str:
+    name = vendor_name or "Vendor"
+    rid = rfx_id or "RFx"
+    fname = filename or "quote.bin"
+    return (
+        f"Dear Procurement Team,\n\n"
+        f"Thanks for the RFx {rid}. Please find our quotation attached.\n\n"
+        f"Attachment: {fname}\n\n"
+        f"(Open Inbox → Parse all to extract line prices and questionnaire answers "
+        f"into Compare. Stub replies mirror what Parse puts into Compare.)\n\n"
+        f"Regards,\n"
+        f"{name}\n"
+    )
+
+
+def _source_format_of(path: str, fallback: str = "") -> str:
+    ext = Path(str(path or "")).suffix.lower().lstrip(".")
+    if ext:
+        return ext
+    fb = str(fallback or "").strip().lower()
+    return fb or "unknown"
+
+
+def _msg_date_label(path: str) -> str:
+    try:
+        p = Path(path)
+        if p.is_file():
+            ts = datetime.fromtimestamp(p.stat().st_mtime)
+            return ts.strftime("%a, %d %b %Y %H:%M")
+    except OSError:
+        pass
+    return datetime.now().strftime("%a, %d %b %Y %H:%M")
+
+
+def inbox_email_cards(pipe: "RFxPipeline") -> list[dict[str, Any]]:
+    """Build inbound email cards aligned with parsed quotes (Compare source of truth).
+
+    Prefer quote-derived bodies after Parse so Inbox cannot drift from matrix cells.
+    Before parse: show text/eml file contents, or a short attachment stub for binaries.
+    """
+    rfx = getattr(pipe, "rfx", None)
+    rfx_id = getattr(rfx, "rfx_id", "") if rfx else ""
+    vendor_by_id: dict[str, Any] = {}
+    if rfx:
+        for v in rfx.vendors or []:
+            vendor_by_id[v.vendor_id] = v
+
+    quotes_by_vid: dict[str, ExtractedQuote] = {}
+    for q in getattr(pipe, "quotes", None) or []:
+        if q and getattr(q, "vendor_id", None):
+            quotes_by_vid[str(q.vendor_id)] = q
+
+    cards: list[dict[str, Any]] = []
+    seen_vids: set[str] = set()
+
+    for msg in getattr(pipe, "inbox", None) or []:
+        vid = str(
+            getattr(msg, "parsed_vendor_id", "")
+            or getattr(msg, "vendor_id", "")
+            or ""
+        )
+        vendor = vendor_by_id.get(vid)
+        from_name = (
+            getattr(msg, "vendor_name", "")
+            or (vendor.name if vendor else "")
+            or vid
+            or "Vendor"
+        )
+        from_email = (
+            getattr(msg, "from_addr", "")
+            or (vendor.email if vendor else "")
+            or "quotes@vendor.example"
+        )
+        subject = getattr(msg, "subject", "") or (
+            f"Re: RFx {rfx_id} — quotation" if rfx_id else "Vendor quotation"
+        )
+        path_s = str(getattr(msg, "path", "") or "")
+        path = Path(path_s) if path_s else None
+        fname = path.name if path else ""
+        quote = quotes_by_vid.get(vid)
+        source_format = _source_format_of(
+            path_s, getattr(quote, "source_format", "") if quote else ""
+        )
+        status = str(getattr(msg, "status", "") or "new")
+
+        if quote:
+            body = _body_from_quote(quote, vendor_name=from_name, rfx_id=rfx_id)
+            if status == "new":
+                status = "parsed"
+        else:
+            body = ""
+            ext = (path.suffix.lower() if path else "")
+            if path and path.is_file() and (
+                ext in _TEXT_LIKE_EXTS or ext == ""
+            ):
+                text = _read_preview_text(path, limit=12000)
+                if text.strip() and (
+                    ext in {".txt", ".eml", ".md"} or _looks_like_email(text)
+                ):
+                    body = text.strip()
+                elif text.strip() and ext in {".csv", ".json"}:
+                    # Still text-like; show a short head so the card isn't empty.
+                    body = text.strip()[:4000]
+            if not body:
+                body = _body_stub_attachment(
+                    filename=fname or "(attachment)",
+                    vendor_name=from_name,
+                    rfx_id=rfx_id,
+                )
+
+        cards.append(
+            {
+                "from_name": from_name,
+                "from_email": from_email,
+                "to": _BUYER_TO,
+                "subject": subject,
+                "date": _msg_date_label(path_s),
+                "vendor_id": vid,
+                "msg_id": getattr(msg, "msg_id", "") or "",
+                "source_format": source_format,
+                "status": status,
+                "body": body,
+                "path": path_s,
+                "filename": fname,
+                "aligned": bool(quote),
+            }
+        )
+        if vid:
+            seen_vids.add(vid)
+
+    # Quotes without an inbox row (e.g. direct ingest) still get a readable card.
+    for vid, quote in quotes_by_vid.items():
+        if vid in seen_vids:
+            continue
+        vendor = vendor_by_id.get(vid)
+        from_name = (vendor.name if vendor else "") or vid
+        from_email = (vendor.email if vendor else "") or f"{vid.lower()}@vendor.example"
+        body = _body_from_quote(quote, vendor_name=from_name, rfx_id=rfx_id)
+        cards.append(
+            {
+                "from_name": from_name,
+                "from_email": from_email,
+                "to": _BUYER_TO,
+                "subject": f"Re: RFx {rfx_id} — quotation" if rfx_id else "Vendor quotation",
+                "date": datetime.now().strftime("%a, %d %b %Y %H:%M"),
+                "vendor_id": vid,
+                "msg_id": "",
+                "source_format": str(quote.source_format or "unknown"),
+                "status": "parsed",
+                "body": body,
+                "path": "",
+                "filename": "",
+                "aligned": True,
+            }
+        )
+
+    return cards
+
+
+def write_inbox_reply_eml_files(pipe: "RFxPipeline") -> list[str]:
+    """Optional: persist quote-aligned bodies as vendor_reply_<id>.eml.txt in the RFX inbox."""
+    written: list[str] = []
+    try:
+        inbox_root = pipe._inbox_dir()
+    except Exception:
+        return written
+    inbox_root.mkdir(parents=True, exist_ok=True)
+    for card in inbox_email_cards(pipe):
+        if not card.get("aligned"):
+            continue
+        vid = str(card.get("vendor_id") or "").strip()
+        if not vid:
+            continue
+        dest = inbox_root / f"vendor_reply_{vid}.eml.txt"
+        header = (
+            f"From: {card.get('from_name')} <{card.get('from_email')}>\n"
+            f"To: {card.get('to')}\n"
+            f"Subject: {card.get('subject')}\n"
+            f"Date: {card.get('date')}\n"
+            f"\n"
+        )
+        try:
+            dest.write_text(header + str(card.get("body") or ""), encoding="utf-8")
+            written.append(str(dest))
+        except OSError:
+            continue
+    return written
+
 
 class RFxPipeline:
     """In-memory crew session for one sourcing event (tab-aware)."""
@@ -474,6 +738,12 @@ class RFxPipeline:
             ] + [quote]
             self.step = "parsed"
             self.wizard_step = "inbox"
+            try:
+                write_inbox_reply_eml_files(self)
+            except Exception:
+                logging.getLogger(__name__).debug(
+                    "write_inbox_reply_eml_files failed", exc_info=True
+                )
             self._persist()
             return quote
         except Exception as exc:
@@ -512,6 +782,12 @@ class RFxPipeline:
         self.quotes = quotes
         self.step = "parsed"
         self.wizard_step = "inbox"
+        try:
+            write_inbox_reply_eml_files(self)
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "write_inbox_reply_eml_files failed", exc_info=True
+            )
         self._persist()
         return self.quotes
 
