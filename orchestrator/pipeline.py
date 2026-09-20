@@ -2316,6 +2316,10 @@ class RFxPipeline:
         On Vercel, /tmp is instance-local. When BLOB_READ_WRITE_TOKEN is set the
         pipeline JSON (quotes, comparison, awards, inbox metadata, dispatch_log)
         is also written via core.storage.save_state so cold starts can reload.
+
+        When running on Vercel with Blob configured, a Blob failure is re-raised
+        so callers do not silently succeed on /tmp-only (which vanishes on the
+        next cold start).
         """
         if not self.rfx:
             return
@@ -2339,18 +2343,35 @@ class RFxPipeline:
                     "persist to %s failed (%s); trying next store", store, exc
                 )
 
+        blob_wanted = False
         blob_ok = False
+        blob_exc: Optional[BaseException] = None
         try:
             from core import storage as _storage
 
-            if os.environ.get("BLOB_READ_WRITE_TOKEN") or _storage.backend_name() == "vercel-blob":
+            blob_wanted = bool(
+                _storage.blob_configured()
+                or os.environ.get("BLOB_READ_WRITE_TOKEN")
+                or _storage.backend_name() == "vercel-blob"
+            )
+            if blob_wanted:
                 # Copy so storage.save_state can attach _version without mutating snap.
                 _storage.save_state(self.rfx.rfx_id, dict(snap))
                 blob_ok = True
         except Exception as exc:  # noqa: BLE001
+            blob_exc = exc
             logging.getLogger(__name__).warning(
                 "blob save_state(%s) failed: %s", self.rfx.rfx_id, exc
             )
+
+        on_vercel = bool(
+            os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+        )
+        if blob_wanted and not blob_ok and on_vercel and blob_exc is not None:
+            raise RuntimeError(
+                f"Blob persist failed for {self.rfx.rfx_id} on Vercel "
+                f"(local /tmp alone is not durable across cold starts): {blob_exc}"
+            ) from blob_exc
 
         if not local_ok and not blob_ok and last_err:
             raise last_err

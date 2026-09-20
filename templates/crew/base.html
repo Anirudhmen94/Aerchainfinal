@@ -309,9 +309,29 @@
       document.querySelectorAll('[data-compare-filters]').forEach(bindCompareFilters);
     }
 
+    function cacheSessionSnapshot() {
+      try {
+        var m = location.pathname.match(/\/crew\/([^\/]+)/);
+        if (!m || !m[1]) return;
+        var id = decodeURIComponent(m[1]);
+        if (!id || id === 'rehydrate') return;
+        fetch('/crew/' + encodeURIComponent(id) + '/session.json', {
+          credentials: 'same-origin',
+          headers: { 'Accept': 'application/json' }
+        }).then(function (r) {
+          if (!r.ok) return null;
+          return r.text();
+        }).then(function (txt) {
+          if (!txt) return;
+          try { localStorage.setItem('aerchain.rfx.' + id, txt); } catch (e) {}
+        }).catch(function () {});
+      } catch (e) {}
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
       bindTipDismiss();
       initFilters();
+      cacheSessionSnapshot();
     });
     document.body.addEventListener('htmx:afterSettle', function () {
       bindTipDismiss();

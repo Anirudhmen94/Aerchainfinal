@@ -41,11 +41,79 @@ app = FastAPI(title="Aerchain RFx Crew", version="0.3.0")
 # load_pipeline rehydrates from STORE_DIR (/tmp) then core.storage Blob when configured.
 _SESSIONS: dict[str, RFxPipeline] = {}
 
-_NOT_FOUND_HTML = (
-    "<div class='err'><strong>RFx not found</strong>"
-    "<p>The session may have expired on a cold start. "
-    "Start a new draft from Home.</p></div>"
-)
+def _not_found_html(rfx_id: str = "") -> str:
+    """Friendly 404 that tries browser localStorage rehydrate before giving up."""
+    rid = html.escape(rfx_id or "")
+    rid_js = json.dumps(rfx_id or "")
+    return f"""<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Session missing — Aerchain RFx Crew</title>
+<style>
+ body{{font-family:system-ui,sans-serif;max-width:36rem;margin:3rem auto;padding:0 1rem;color:#1e293b;background:#f8fafc}}
+ .card{{background:#fff;border:1px solid #e2e8f0;border-radius:0.75rem;padding:1.25rem 1.5rem;box-shadow:0 1px 2px rgb(0 0 0/0.04)}}
+ h1{{font-size:1.15rem;margin:0 0 .5rem;color:#991b1b}}
+ p{{font-size:0.9rem;line-height:1.45;color:#334155}}
+ a{{color:#4338ca;font-weight:500}}
+ .muted{{color:#64748b;font-size:0.8rem}}
+ #status{{margin-top:0.75rem;font-size:0.85rem}}
+</style></head><body>
+<div class="card">
+ <h1>Session missing on server</h1>
+ <p>RFx <code>{rid or "(unknown)"}</code> is not on this serverless instance
+ (cold start or Blob miss). Checking your browser for a saved copy…</p>
+ <div id="status" class="muted">Looking in localStorage…</div>
+ <p style="margin-top:1rem"><a href="/">← Back to Home</a></p>
+</div>
+<script>
+(function () {{
+  var id = {rid_js};
+  var status = document.getElementById("status");
+  if (!id) {{
+    status.textContent = "No RFx id in this URL. Start a new draft from Home.";
+    return;
+  }}
+  // Prefer id from path if the page was hit without an embedded id.
+  try {{
+    var m = location.pathname.match(new RegExp('/crew/([^/]+)'));
+    if (m && m[1]) id = decodeURIComponent(m[1]);
+  }} catch (e) {{}}
+  var key = "aerchain.rfx." + id;
+  var raw = null;
+  try {{ raw = localStorage.getItem(key); }} catch (e) {{}}
+  if (!raw) {{
+    status.innerHTML = "No saved copy found in this browser for <code>" + id +
+      "</code>. <a href=\"/\">Start a new draft</a>.";
+    return;
+  }}
+  status.textContent = "Found a local copy — restoring on the server…";
+  fetch("/crew/rehydrate", {{
+    method: "POST",
+    headers: {{"Content-Type": "application/json"}},
+    body: raw
+  }}).then(function (r) {{
+    if (r.redirected) {{ location.href = r.url; return; }}
+    if (r.ok) {{
+      return r.json().then(function (j) {{
+        location.href = (j && j.redirect) || ("/crew/" + encodeURIComponent(id) + "/wizard");
+      }}).catch(function () {{
+        location.href = "/crew/" + encodeURIComponent(id) + "/wizard";
+      }});
+    }}
+    return r.text().then(function (t) {{
+      status.textContent = "Restore failed: " + (t || r.status);
+    }});
+  }}).catch(function (err) {{
+    status.textContent = "Restore failed: " + err;
+  }});
+}})();
+</script>
+</body></html>"""
+
+
+def _not_found_response(rfx_id: str = "") -> HTMLResponse:
+    return HTMLResponse(_not_found_html(rfx_id), status_code=404)
 
 
 @app.exception_handler(Exception)
@@ -379,6 +447,63 @@ def healthz():
     }
 
 
+@app.get("/healthz/storage")
+def healthz_storage():
+    """Tiny Blob/local roundtrip. Always 200 with write_ok/read_ok flags."""
+    try:
+        from core import storage as _storage
+
+        result = _storage.storage_healthcheck()
+    except Exception as exc:  # noqa: BLE001
+        result = {
+            "backend": "unknown",
+            "blob_configured": False,
+            "write_ok": False,
+            "read_ok": False,
+            "error": f"{exc.__class__.__name__}: {exc}",
+        }
+    result["ok"] = bool(result.get("write_ok") and result.get("read_ok"))
+    return JSONResponse(result)
+
+
+@app.get("/crew/{rfx_id}/session.json")
+def crew_session_json(rfx_id: str):
+    """Export pipeline snapshot for browser localStorage durability."""
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return JSONResponse({"error": "not_found", "rfx_id": rfx_id}, status_code=404)
+    return JSONResponse(pipe.snapshot())
+
+
+@app.post("/crew/rehydrate")
+async def crew_rehydrate(request: Request):
+    """Accept a browser-held snapshot, load into pipeline, persist, redirect to wizard."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "invalid_json"}, status_code=400)
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "expected_object"}, status_code=400)
+    rfx = body.get("rfx") or {}
+    rid = (rfx.get("rfx_id") if isinstance(rfx, dict) else None) or body.get("rfx_id")
+    if not rid or not isinstance(rid, str):
+        return JSONResponse({"error": "missing_rfx_id"}, status_code=400)
+    try:
+        pipe = RFxPipeline()
+        pipe.load_snapshot(body)
+    except Exception as exc:
+        log.warning("rehydrate load_snapshot failed: %s", exc)
+        return JSONResponse({"error": "invalid_snapshot", "detail": str(exc)}, status_code=400)
+    if not pipe.rfx or pipe.rfx.rfx_id != rid:
+        return JSONResponse({"error": "rfx_id_mismatch"}, status_code=400)
+    _save(pipe)
+    redirect = f"/crew/{rid}/wizard"
+    accept = (request.headers.get("accept") or "").lower()
+    if "text/html" in accept and "application/json" not in accept:
+        return RedirectResponse(redirect, status_code=303)
+    return JSONResponse({"ok": True, "rfx_id": rid, "redirect": redirect})
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     events = []
@@ -528,7 +653,7 @@ def crew_board_redirect(rfx_id: str):
 def crew_wizard(request: Request, rfx_id: str, step: Optional[str] = None):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     if step and step in WIZARD_STEPS:
         pipe.set_wizard_step(step)
         _save(pipe)
@@ -558,7 +683,7 @@ def crew_wizard(request: Request, rfx_id: str, step: Optional[str] = None):
 def crew_wizard_goto(rfx_id: str, step: str = Form(...)):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     if step not in WIZARD_STEPS:
         return HTMLResponse(f"<div class='err'>Unknown tab: {step}</div>", status_code=400)
     pipe.set_wizard_step(step)
@@ -570,7 +695,7 @@ def crew_wizard_goto(rfx_id: str, step: str = Form(...)):
 def crew_wizard_next(rfx_id: str):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     pipe.advance()
     _save(pipe)
     return RedirectResponse(f"/crew/{rfx_id}/wizard?step={pipe.wizard_step}", status_code=303)
@@ -589,7 +714,7 @@ def crew_draft_fields(
 ):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     pipe.update_draft_fields(
         brief=brief or None,
         title=title or None,
@@ -610,7 +735,7 @@ def crew_draft_generate(
 ):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     pipe.update_draft_fields(
         brief=brief or None,
         title=title or None,
@@ -634,7 +759,7 @@ def crew_draft_generate(
 async def crew_draft_lines(request: Request, rfx_id: str):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     form = await request.form()
     # Expect parallel arrays line_id[], description[], qty[], uom[]
     ids = form.getlist("line_id")
@@ -664,7 +789,7 @@ def crew_draft_continue(rfx_id: str):
     """Soft jump to Send (tabs are free; prep cover previews when possible)."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     if pipe.rfx.line_items:
         try:
             pipe.refresh_cover_previews()
@@ -682,7 +807,7 @@ def crew_draft_continue(rfx_id: str):
 def crew_dispatch(request: Request, rfx_id: str):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     try:
         pipe.dispatch()
         _save(pipe)
@@ -697,7 +822,7 @@ def crew_send_continue(rfx_id: str):
     """Soft jump to Inbox (optional seed after dispatch)."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     if pipe.dispatch_log and not pipe.inbox:
         try:
             pipe.seed_inbox()
@@ -715,7 +840,7 @@ def crew_send_continue(rfx_id: str):
 def crew_inbox_seed(rfx_id: str):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     try:
         pipe.seed_inbox(force=True)
         _save(pipe)
@@ -729,7 +854,7 @@ def crew_inbox_seed(rfx_id: str):
 def crew_inbox_parse(rfx_id: str, msg_id: str = Form(...)):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     try:
         pipe.parse_inbox_message(msg_id)
         _save(pipe)
@@ -743,7 +868,7 @@ def crew_inbox_parse(rfx_id: str, msg_id: str = Form(...)):
 def crew_inbox_parse_all(rfx_id: str):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     try:
         pipe.parse_all_inbox()
         _save(pipe)
@@ -761,7 +886,7 @@ async def crew_inbox_upload(
 ):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     try:
         if files:
             upload_dir = _uploads_dir(rfx_id)
@@ -783,7 +908,7 @@ def crew_inbox_continue(rfx_id: str):
     """Soft jump to Compare; build matrix only when quotes exist."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     if pipe.quotes and not pipe.comparison:
         try:
             pipe.normalize()
@@ -804,7 +929,7 @@ async def crew_ingest(
 ):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     try:
         if files and any(f.filename for f in files):
             upload_dir = _uploads_dir(rfx_id)
@@ -833,7 +958,7 @@ async def crew_ingest(
 def crew_normalize(request: Request, rfx_id: str):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     try:
         pipe.normalize()
         _save(pipe)
@@ -848,7 +973,7 @@ def crew_compare_continue(rfx_id: str):
     """Soft jump to Ask (no hard gate)."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     if pipe.quotes and not pipe.comparison:
         try:
             pipe.normalize()
@@ -866,7 +991,7 @@ def crew_compare_continue(rfx_id: str):
 def crew_ask(request: Request, rfx_id: str, question: str = Form(...)):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     try:
         result = pipe.ask(question)
     except Exception as exc:
@@ -888,7 +1013,7 @@ def crew_ask_continue(rfx_id: str):
     """Soft jump to Award (tabs are free)."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     pipe.set_wizard_step("award")
     _save(pipe)
     return RedirectResponse(f"/crew/{rfx_id}/wizard?step=award", status_code=303)
@@ -901,7 +1026,7 @@ def crew_ask_continue(rfx_id: str):
 async def crew_award_save(request: Request, rfx_id: str):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     form = await request.form()
     awards: dict[str, str] = {}
     for li in pipe.rfx.line_items:
@@ -925,7 +1050,7 @@ async def crew_award_save(request: Request, rfx_id: str):
 def crew_award_suggest(rfx_id: str):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     try:
         pipe.suggest_awards()
     except Exception as exc:
@@ -939,7 +1064,7 @@ async def crew_award_partial_request(request: Request, rfx_id: str):
     """Buyer: request partial award for a non-fully-eligible vendor (needs manager approval)."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     form = await request.form()
     line_id = str(form.get("line_id") or "").strip()
     vendor_id = str(form.get("vendor_id") or "").strip()
@@ -961,7 +1086,7 @@ async def crew_award_partial_approve(request: Request, rfx_id: str):
     """Manager stub: approve a pending partial award request."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     form = await request.form()
     request_id = str(form.get("request_id") or "").strip()
     comment = str(form.get("manager_comment") or form.get("comment") or "").strip()
@@ -979,7 +1104,7 @@ async def crew_award_partial_reject(request: Request, rfx_id: str):
     """Manager stub: reject a pending partial award request."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     form = await request.form()
     request_id = str(form.get("request_id") or "").strip()
     comment = str(form.get("manager_comment") or form.get("comment") or "").strip()
@@ -996,7 +1121,7 @@ async def crew_award_partial_reject(request: Request, rfx_id: str):
 def crew_award_print(request: Request, rfx_id: str):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     ctx = _wizard_ctx(pipe)
     return _render(request, "crew/award_print.html", **ctx)
 
@@ -1009,7 +1134,7 @@ def crew_evidence(request: Request, rfx_id: str, line_id: str = "", vendor_id: s
     """Evidence drawer partial for a Compare/Award price cell."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     payload = pipe.evidence_for_cell(line_id, vendor_id)
     return _render(
         request,
@@ -1053,7 +1178,7 @@ def crew_source_file(rfx_id: str, vendor_id: str = "", path: str = ""):
     """
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     hint = (path or "").strip()
     resolved = pipe.resolve_source_path(vendor_id, hint=hint) if vendor_id or hint else None
     if resolved is None and hint:
@@ -1084,7 +1209,7 @@ def crew_source_preview(
     """
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     lid = line_id or (pipe.rfx.line_items[0].line_id if pipe.rfx.line_items else "")
     ev = pipe.evidence_for_cell(lid, vendor_id)
     return _render(
@@ -1102,7 +1227,7 @@ def crew_award_notify(request: Request, rfx_id: str):
     """Stub-write award_notice_*.txt into data/outbox (no SMTP)."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     try:
         paths = pipe.notify_awarded_vendors()
         _save(pipe)
@@ -1120,7 +1245,7 @@ async def crew_award_freeze(request: Request, rfx_id: str):
     """Persist freeze snapshot; lock award dropdowns until unfreeze."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     form = await request.form()
     note = str(form.get("note") or "").strip()
     try:
@@ -1136,7 +1261,7 @@ async def crew_award_freeze(request: Request, rfx_id: str):
 async def crew_award_unfreeze(request: Request, rfx_id: str):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     form = await request.form()
     note = str(form.get("note") or "").strip()
     try:
@@ -1152,7 +1277,7 @@ async def crew_cell_override(request: Request, rfx_id: str):
     """Cheap cell override — appends review_log only (no cell status mutation)."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     form = await request.form()
     line_id = str(form.get("line_id") or "").strip()
     vendor_id = str(form.get("vendor_id") or "").strip()
@@ -1192,7 +1317,7 @@ def crew_snapshot(rfx_id: str):
 def crew_award_export_xlsx(rfx_id: str):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     data = pipe.export_award("xlsx")
     return Response(
         content=data,
@@ -1205,7 +1330,7 @@ def crew_award_export_xlsx(rfx_id: str):
 def crew_award_export_csv(rfx_id: str):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     data = pipe.export_award("csv")
     return Response(
         content=data,
@@ -1218,7 +1343,7 @@ def crew_award_export_csv(rfx_id: str):
 def crew_award_export_md(rfx_id: str):
     pipe = _session(rfx_id)
     if not pipe.rfx:
-        return HTMLResponse(_NOT_FOUND_HTML, status_code=404)
+        return _not_found_response(rfx_id)
     data = pipe.export_award("md")
     return Response(
         content=data,
