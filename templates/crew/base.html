@@ -431,11 +431,23 @@
       if (String(form.action).indexOf('/crew/') === -1) return;
       try { cacheSessionSnapshot(); } catch (e) {}
       ev.preventDefault();
+      var submitter = ev.submitter || null;
       window.__aerchainEnsureSession(id).then(function () {
         form.dataset.aerchainReady = '1';
         try { cacheSessionSnapshot(); } catch (e) {}
-        if (typeof form.requestSubmit === 'function') form.requestSubmit();
-        else form.submit();
+        // Preserve button formaction (e.g. Draft "Open Outbox") — bare form.submit() ignores it.
+        if (typeof form.requestSubmit === 'function') {
+          if (submitter) form.requestSubmit(submitter);
+          else form.requestSubmit();
+        } else {
+          if (submitter) {
+            var fa = submitter.getAttribute('formaction');
+            var fm = submitter.getAttribute('formmethod');
+            if (fa) form.setAttribute('action', fa);
+            if (fm) form.setAttribute('method', fm);
+          }
+          HTMLFormElement.prototype.submit.call(form);
+        }
       });
     }, true);
 

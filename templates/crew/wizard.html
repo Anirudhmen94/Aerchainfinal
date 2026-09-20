@@ -112,7 +112,7 @@
     </div>
     <div class="flex flex-wrap gap-2">
       <button class="btn-sec" type="submit" title="Save edited line ids, descriptions, qty, UOM">Save line edits</button>
-      <button class="btn-sec" formaction="/crew/{{ rfx.rfx_id }}/draft/continue" formmethod="post" title="Jump to Outbox with cover previews">Open Outbox →</button>
+      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send" title="Jump to Outbox with cover previews">Open Outbox →</a>
     </div>
   </form>
   <details class="text-sm">
