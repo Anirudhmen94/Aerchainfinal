@@ -514,8 +514,8 @@
 
   {% if q_matrix %}
   <div class="mt-4 mb-2">
-    <h3 class="font-medium text-sm mb-1">Questionnaire comparison</h3>
-    <p class="text-xs text-slate-500 mb-2">Rows = questions (KO = knockout). Cells = Pass / Fail / Unanswered with the extracted answer.</p>
+    <h3 class="font-medium text-sm mb-1">Full questionnaire comparison ({{ q_matrix|length }} questions × vendors)</h3>
+    <p class="text-xs text-slate-500 mb-2">All RFx questionnaire rows — not only knockouts. KO badge marks gate questions. Cells = Pass / Fail / Unanswered + answer text (same idea as the price matrix).</p>
     <div class="overflow-auto max-h-[22rem] border border-slate-200 rounded-lg">
       <table class="matrix w-full">
         <thead class="bg-slate-50 sticky top-0">

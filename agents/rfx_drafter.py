@@ -122,10 +122,12 @@ Hard rules:
 - Put engineering detail in each line's specs dict (keys such as length_mm,
   width_mm, height_mm, ply, gsm, flute, print). Descriptions must be specific
   enough for a vendor to quote without calling back.
-- Questionnaire: 8–12 questions on quality systems, BCT/ECT/burst testing,
-  material sourcing (FSC / recycled content), food-contact or moisture if
-  relevant, capacity, and references. Mark exactly 3 or 4 as knockout=true
-  (a 'No' disqualifies).
+- Questionnaire: emit EXACTLY 8 questions (not fewer). Cover these topics in order:
+  Q1 ISO 9001 (knockout), Q2 FSC / chain-of-custody (knockout), Q3 food-contact /
+  hygiene certification (knockout), Q4 in-house BCT/ECT or burst testing,
+  Q5 installed capacity / utilisation, Q6 lead time to first delivery,
+  Q7 moisture/contamination control for snacks packaging, Q8 references from
+  food/snacks buyers. Mark exactly 3 or 4 as knockout=true (a 'No' disqualifies).
 - Commercial terms as a single clear string: INR per piece, delivered,
   exclusive of GST unless the brief says otherwise; payment, validity, freight.
 - Follow the brief's numbers (volumes, sizes, plant, timelines). Never invent
@@ -167,7 +169,7 @@ class _DraftPayload(BaseModel):
     terms: str = Field(description="Commercial terms as a single prose block")
     currency: str = "INR"
     line_items: list[_DraftLine] = Field(description="Corrugated line items; count must match requested N")
-    questionnaire: list[_DraftQuestion] = Field(description="8–12 questions; 3–4 knockout")
+    questionnaire: list[_DraftQuestion] = Field(description="Exactly 8 questions; 3–4 knockout")
     vendors: list[_DraftVendor] = Field(
         default_factory=list, description="Exactly 5 target vendors"
     )
@@ -233,7 +235,7 @@ def _user_content(
         f"{brief.strip()}\n\n"
         f"Draft the complete RFx now via emit_rfx. Remember: exactly {target_lines} line items "
         f"(the brief asked for this count — do NOT emit 30 unless N={target_lines}). Title and scope MUST state the same count (~{target_lines} SKUs / {target_lines} line items) — never write a different SKU count in scope than in line_items. "
-        "8–12 questionnaire items with 3–4 knockout, and exactly 5 vendors."
+        "exactly 8 questionnaire items (Q1–Q8 topics as in system prompt) with 3–4 knockout, and exactly 5 vendors."
     )
     if context_note:
         text += f"\n\n{context_note}"
@@ -554,7 +556,7 @@ def draft_rfx(brief: str, **kwargs: Any) -> RFx:
         target_lines=target_lines,
     )
 
-    if not (8 <= len(payload.questionnaire) <= 12):
+    if not (8 <= len(payload.questionnaire) <= 10):
         if not payload.questionnaire:
             raise RFxDraftError("RFx draft questionnaire is empty.")
 
