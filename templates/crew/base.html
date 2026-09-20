@@ -6,6 +6,7 @@
   <title>{% block title %}Aerchain RFx Crew{% endblock %}</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <style>
     .err { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; border-radius:0.5rem; padding:0.75rem; }
     .card { background:#fff; border:1px solid #e2e8f0; border-radius:0.75rem; box-shadow:0 1px 2px rgb(0 0 0/0.04); padding:1.25rem; }
@@ -47,6 +48,10 @@
     .price-cell { cursor:pointer; }
     .price-cell:hover { outline:2px solid #818cf8; outline-offset:-2px; }
     .evidence-backdrop { position:fixed; inset:0; background:rgba(15,23,42,0.35); z-index:40; }
+    .ko-chart-wrap { position:relative; height:220px; max-width:100%; margin:0.75rem 0 1rem; }
+    .q-pass { background:#ecfdf5; }
+    .q-fail { background:#fef2f2; }
+    .q-unanswered { background:#f8fafc; }
     .evidence-drawer { position:fixed; top:0; right:0; height:100%; width:min(28rem,100%); background:#fff; z-index:50; box-shadow:-8px 0 24px rgba(15,23,42,0.15); overflow:auto; padding:1.25rem; }
     .evidence-drawer h3 { font-size:1rem; font-weight:600; margin-bottom:0.25rem; }
     .evidence-meta { font-size:0.75rem; color:#64748b; margin-bottom:0.75rem; }

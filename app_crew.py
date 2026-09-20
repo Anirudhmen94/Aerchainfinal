@@ -157,6 +157,7 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
 
     shortlist_pass = [r for r in shortlist_rows if r.get("pass")]
     shortlist_fail = [r for r in shortlist_rows if not r.get("pass")]
+    ko_matrix = [row for row in q_matrix if row.get("knockout")]
     provisional = pipe.provisional_status()
 
     # Award explainability — why lines have empty dropdowns / empty Pass shortlist
@@ -200,6 +201,7 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "shortlist_fail": shortlist_fail,
         "award_notice_paths": list(getattr(pipe, "award_notice_paths", None) or []),
         "q_matrix": q_matrix,
+        "ko_matrix": ko_matrix,
         "award_gaps": award_gaps,
         "eligibility_reasons_by_line": eligibility_reasons_by_line,
         "freeze": getattr(pipe, "freeze", None),
