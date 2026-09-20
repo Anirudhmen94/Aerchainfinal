@@ -36,7 +36,7 @@ log = logging.getLogger("app_crew")
 app = FastAPI(title="Aerchain RFx Crew", version="0.3.0")
 
 # In-memory cache for the warm serverless instance only. Cold starts wipe this;
-# load_pipeline rehydrates from STORE_DIR (/tmp/aerchain-data/store when VERCEL=1).
+# load_pipeline rehydrates from STORE_DIR (/tmp) then core.storage Blob when configured.
 _SESSIONS: dict[str, RFxPipeline] = {}
 
 _NOT_FOUND_HTML = (
@@ -368,21 +368,49 @@ def healthz():
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
     events = []
+    seen: set[str] = set()
     if STORE_DIR.exists():
         for path in sorted(STORE_DIR.glob("*.json"), reverse=True)[:12]:
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 rfx = data.get("rfx") or {}
+                rid = rfx.get("rfx_id", path.stem)
                 events.append(
                     {
-                        "id": rfx.get("rfx_id", path.stem),
+                        "id": rid,
                         "title": rfx.get("title", "Untitled"),
                         "step": data.get("wizard_step") or data.get("step", ""),
                         "vendors": len(rfx.get("vendors") or []),
                     }
                 )
+                seen.add(rid)
             except Exception:
                 continue
+    # Blob-backed recent list (survives cold start when /tmp is empty).
+    try:
+        from core import storage as _storage
+
+        if _storage.backend_name() == "vercel-blob":
+            for rid in _storage.list_rfx_ids():
+                if rid in seen:
+                    continue
+                data = _storage.load_state(rid)
+                if not data:
+                    continue
+                rfx = data.get("rfx") or {}
+                events.append(
+                    {
+                        "id": rfx.get("rfx_id", rid),
+                        "title": rfx.get("title", "Untitled"),
+                        "step": data.get("wizard_step") or data.get("step", ""),
+                        "vendors": len(rfx.get("vendors") or []),
+                    }
+                )
+                seen.add(rid)
+                if len(events) >= 12:
+                    break
+    except Exception as exc:
+        log.warning("home list_rfx_ids failed: %s", exc)
     # Default happy-path brief — pairs with seed vendor pack after Draft→Send→Seed→Parse.
     # Persona alignment on parse yields ≥2 Pass vendors with usable prices (no hardcoded awards).
     example = (

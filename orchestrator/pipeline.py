@@ -288,12 +288,59 @@ class RFxPipeline:
         d.mkdir(parents=True, exist_ok=True)
         return d
 
+    def _ensure_inbox_files(self) -> None:
+        """Re-copy VENDOR_DIR fixtures into /tmp inbox when missing (cold-start safe).
+
+        Snapshot metadata (quotes, inbox rows) lives in Blob; binary seed files only
+        exist under /tmp and vanish on a new instance. Paths in the snapshot are
+        remapped to the freshly seeded files by filename / vendor_id.
+        """
+        if not self.rfx:
+            return
+        inbox_root = self._inbox_dir()
+        has_files = False
+        if inbox_root.exists():
+            has_files = any(
+                p.is_file()
+                and not p.name.startswith(".")
+                and not p.name.endswith(".extract.json")
+                for p in inbox_root.iterdir()
+            )
+        if not has_files:
+            seed_inbox(inbox_dir=inbox_root, vendor_dir=VENDOR_DIR)
+        by_name = {
+            p.name: p
+            for p in inbox_root.iterdir()
+            if p.is_file() and not p.name.startswith(".")
+        }
+        if not self.inbox:
+            return
+        for msg in self.inbox:
+            if msg.path and Path(msg.path).exists():
+                continue
+            name = Path(msg.path).name if msg.path else ""
+            if name and name in by_name:
+                msg.path = str(by_name[name])
+                continue
+            vid = (msg.vendor_id or "").lower()
+            if not vid:
+                continue
+            for fname, fpath in by_name.items():
+                if fname.endswith(".extract.json"):
+                    continue
+                if vid in fname.lower() or vid.replace("0", "") in fname.lower():
+                    msg.path = str(fpath)
+                    break
+
     def seed_inbox(self, *, force: bool = False) -> list[InboxMessage]:
         if not self.rfx:
             raise RuntimeError("No RFx loaded.")
         inbox_root = self._inbox_dir()
+        self._ensure_inbox_files()
         if self.inbox and not force:
-            return self.inbox
+            # Cold start: metadata present but files were just re-seeded — keep msgs.
+            if all(Path(m.path).exists() for m in self.inbox if m.path):
+                return self.inbox
 
         seed_inbox(inbox_dir=inbox_root, vendor_dir=VENDOR_DIR)
         rows = list_inbox(inbox_dir=inbox_root)
@@ -365,6 +412,7 @@ class RFxPipeline:
     def parse_inbox_message(self, msg_id: str) -> ExtractedQuote:
         if not self.rfx:
             raise RuntimeError("No RFx loaded.")
+        self._ensure_inbox_files()
         msg = next((m for m in self.inbox if m.msg_id == msg_id), None)
         if not msg:
             raise KeyError(f"Unknown inbox message {msg_id}")
@@ -393,6 +441,8 @@ class RFxPipeline:
     def parse_all_inbox(self, *, skip_llm: bool = False) -> list[ExtractedQuote]:
         if not self.rfx:
             raise RuntimeError("No RFx loaded.")
+        # Cold start: /tmp inbox may be empty even when Blob snapshot has messages.
+        self._ensure_inbox_files()
         if not self.inbox:
             self.seed_inbox()
         quotes: list[ExtractedQuote] = []
@@ -1491,26 +1541,48 @@ class RFxPipeline:
         self.partial_requests = list(data.get("partial_requests") or [])
 
     def _persist(self) -> None:
-        """Write snapshot to STORE_DIR; fall back to /tmp on read-only FS."""
+        """Write snapshot to local STORE_DIR (best effort) and Blob when configured.
+
+        On Vercel, /tmp is instance-local. When BLOB_READ_WRITE_TOKEN is set the
+        pipeline JSON (quotes, comparison, awards, inbox metadata, dispatch_log)
+        is also written via core.storage.save_state so cold starts can reload.
+        """
         if not self.rfx:
             return
-        payload = json.dumps(self.snapshot(), indent=2, default=str)
+        snap = self.snapshot()
+        payload = json.dumps(snap, indent=2, default=str)
         fallback = Path("/tmp/aerchain-data/store")
         candidates: list[Path] = [STORE_DIR]
         if fallback.resolve() != STORE_DIR.resolve():
             candidates.append(fallback)
+        local_ok = False
         last_err: Optional[OSError] = None
         for store in candidates:
             try:
                 store.mkdir(parents=True, exist_ok=True)
                 (store / f"{self.rfx.rfx_id}.json").write_text(payload, encoding="utf-8")
-                return
+                local_ok = True
+                break
             except OSError as exc:
                 last_err = exc
                 logging.getLogger(__name__).warning(
                     "persist to %s failed (%s); trying next store", store, exc
                 )
-        if last_err:
+
+        blob_ok = False
+        try:
+            from core import storage as _storage
+
+            if os.environ.get("BLOB_READ_WRITE_TOKEN") or _storage.backend_name() == "vercel-blob":
+                # Copy so storage.save_state can attach _version without mutating snap.
+                _storage.save_state(self.rfx.rfx_id, dict(snap))
+                blob_ok = True
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).warning(
+                "blob save_state(%s) failed: %s", self.rfx.rfx_id, exc
+            )
+
+        if not local_ok and not blob_ok and last_err:
             raise last_err
 
 
@@ -1523,10 +1595,11 @@ def run_pipeline(
 
 
 def load_pipeline(rfx_id: str) -> RFxPipeline:
-    """Load from STORE_DIR, then /tmp fallback (serverless warm-instance persistence).
+    """Load from local STORE_DIR (/tmp on Vercel), then Blob via core.storage.
 
-    On Vercel/Lambda, STORE_DIR is under /tmp/aerchain-data so snapshots survive
-    for the warm instance after in-memory _SESSIONS are wiped on cold start.
+    Cold starts wipe in-memory _SESSIONS and instance-local /tmp. When
+    BLOB_READ_WRITE_TOKEN is set, snapshots dual-written by _persist are
+    recovered through core.storage.load_state.
     """
     pipe = RFxPipeline()
     fallback = Path("/tmp/aerchain-data/store") / f"{rfx_id}.json"
@@ -1543,4 +1616,16 @@ def load_pipeline(rfx_id: str) -> RFxPipeline:
                 "load_pipeline(%s) from %s failed: %s", rfx_id, path, exc
             )
             continue
+
+    try:
+        from core import storage as _storage
+
+        data = _storage.load_state(rfx_id)
+        if data:
+            pipe.load_snapshot(data)
+            return pipe
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning(
+            "load_pipeline(%s) from storage failed: %s", rfx_id, exc
+        )
     return pipe
