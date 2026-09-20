@@ -66,6 +66,20 @@
     .q-cell .ans { display:block; margin-top:0.15rem; font-weight:500; max-width:9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-left:auto; margin-right:auto; }
     .ko-badge { display:inline-block; font-size:0.6rem; padding:0.05rem 0.3rem; border-radius:9999px; background:#fee2e2; color:#991b1b; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; }
 
+    .sad-dialog-backdrop {
+      position:fixed; inset:0; background:rgba(15,23,42,0.45); z-index:60;
+      display:flex; align-items:center; justify-content:center; padding:1rem;
+    }
+    .sad-dialog {
+      background:#fff; border-radius:1rem; max-width:28rem; width:100%;
+      box-shadow:0 20px 50px rgba(15,23,42,0.25); border:1px solid #fecaca;
+      padding:1.25rem 1.5rem;
+    }
+    .sad-dialog h3 { font-size:1.05rem; font-weight:700; color:#991b1b; margin-bottom:0.5rem; }
+    .sad-dialog p { font-size:0.875rem; color:#1e293b; line-height:1.45; }
+    .sad-dialog ul { margin:0.75rem 0; padding-left:1.1rem; font-size:0.8rem; color:#7f1d1d; }
+    .sad-dialog .actions { display:flex; gap:0.5rem; justify-content:flex-end; margin-top:1rem; }
+
     @media print {
       .no-print { display:none !important; }
       body { background:#fff; }

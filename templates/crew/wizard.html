@@ -682,6 +682,40 @@
   </div>
 
 
+  {# Sad path: single dialogue when no vendor is award-eligible #}
+  {% set sad_path = pipe.comparison and (not shortlist_pass) %}
+  {% if sad_path %}
+  <div id="sad-award-dialog" class="sad-dialog-backdrop no-print" role="dialog" aria-modal="true" aria-labelledby="sad-award-title">
+    <div class="sad-dialog">
+      <h3 id="sad-award-title">No vendor is eligible for award</h3>
+      <p>
+        This sourcing event has <strong>zero Pass vendors</strong> on the quality questionnaire
+        (or Pass vendors have no usable prices). Nothing can be assigned on any line until
+        knockouts are cleared or coverage improves.
+      </p>
+      {% if award_gaps and (award_gaps.summary or award_gaps.global_banner) %}
+      <p class="mt-2"><strong>Why:</strong> {{ award_gaps.global_banner or award_gaps.summary }}</p>
+      {% endif %}
+      {% if award_gaps and award_gaps.vendors %}
+      <ul>
+        {% for v in award_gaps.vendors %}
+          {% if not v.award_eligible or not v.questionnaire_passed %}
+          <li>
+            <strong>{{ v.vendor_name or v.vendor_id }}</strong>
+            {% if v.reasons %} — {{ v.reasons|join('; ') }}{% elif v.blockers %} — {{ v.blockers|join(', ') }}{% else %} — not eligible{% endif %}
+          </li>
+          {% endif %}
+        {% endfor %}
+      </ul>
+      {% endif %}
+      <div class="actions">
+        <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">Open Compare</a>
+        <button type="button" class="btn" onclick="document.getElementById('sad-award-dialog').style.display='none'">Got it</button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   {% if award_gaps and award_gaps.global_banner %}
   <div class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 no-print">
     <div class="font-medium mb-1">Why Award is empty</div>
