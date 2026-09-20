@@ -10,6 +10,7 @@ import re
 from typing import Any, Iterable
 
 from shared_models import ComparisonTable, ExtractedQuote, NormalizedCell
+from agents.qualification import award_eligible_vendors, qualify_vendors
 
 
 USD_TO_INR = 83.50
@@ -328,10 +329,46 @@ def normalize(rfx, extractions: list[ExtractedQuote]) -> ComparisonTable:
                 flags=cell_flags,
             ))
         vendor_flags[vendor_id] = list(dict.fromkeys(flags))
+
+    qualifications = qualify_vendors(rfx, extractions)
+    for qual in qualifications:
+        vf = vendor_flags.setdefault(qual.vendor_id, [])
+        if qual.award_eligible:
+            vf.append("questionnaire_passed")
+        else:
+            vf.append("questionnaire_failed")
+            vf.extend(qual.reasons)
+        vendor_flags[qual.vendor_id] = list(dict.fromkeys(vf))
+
+    award_eligible = [q.vendor_id for q in qualifications if q.award_eligible]
+    # Also fill legacy/wizard aliases expected by Compare UI + analyst.
+    from shared_models import QuestionnaireResult
+    q_results = {}
+    for qual in qualifications:
+        q_results[qual.vendor_id] = [
+            QuestionnaireResult(
+                question_id=kr.question_id,
+                question=kr.question,
+                knockout=True,
+                answer=kr.answer or "",
+                passed=kr.passed,
+            )
+            for kr in qual.knockout_results
+        ]
+    vendor_names = {
+        _text(_value(v, "vendor_id")): _text(_value(v, "name"))
+        for v in (_value(rfx, "vendors", []) or [])
+        if _text(_value(v, "vendor_id"))
+    }
     return ComparisonTable(
         rfx_id=_text(_value(rfx, "rfx_id")),
         cells=cells,
         vendor_flags=vendor_flags,
+        qualifications=qualifications,
+        award_eligible_vendors=award_eligible,
+        qualified_vendors=list(award_eligible),
+        questionnaire_results=q_results,
+        vendor_names=vendor_names,
     )
 
 
@@ -347,4 +384,4 @@ class NormalizerAgent:
 
 normalize_quotes = normalize
 
-__all__ = ["USD_TO_INR", "NormalizerAgent", "normalize", "normalize_quotes"]
+__all__ = ["USD_TO_INR", "NormalizerAgent", "normalize", "normalize_quotes", "qualify_vendors", "award_eligible_vendors"]

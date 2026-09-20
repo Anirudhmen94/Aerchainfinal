@@ -1,28 +1,39 @@
 {% extends "crew/base.html" %}
-{% block title %}Brief → RFx Crew{% endblock %}
+{% block title %}Start · RFx Crew{% endblock %}
 {% block content %}
 <section class="grid md:grid-cols-5 gap-6">
   <div class="md:col-span-3 card">
-    <h1 class="text-2xl font-semibold mb-2">Full end-to-end RFx crew</h1>
+    <h1 class="text-2xl font-semibold mb-2">Start a sourcing event</h1>
     <p class="text-slate-600 text-sm mb-4">
-      One click runs all five agents: draft the RFx, stub-dispatch vendor emails,
-      parse messy sample replies, normalise to INR/piece, then answer award questions.
+      Walk the buyer workflow step by step:
+      <strong>Draft → Send → Inbox → Compare → Ask → Award</strong>.
+      Each step unlocks only when the previous one is complete.
     </p>
-    <form method="post" action="/crew/run-e2e" class="space-y-3" id="e2e-form">
-      <textarea name="brief" rows="8" class="w-full rounded-lg border border-slate-300 p-3 text-sm" required>{{ example_brief }}</textarea>
-      <button class="btn" type="submit" id="e2e-btn">Run full end-to-end demo</button>
-      <p class="text-xs text-slate-500">Takes about 1–3 minutes with Claude. You land on one board with every stage filled.</p>
+    <form method="post" action="/crew/start" class="space-y-3" id="start-form">
+      <label class="block text-sm font-medium">Brief</label>
+      <textarea name="brief" rows="7" class="w-full rounded-lg border border-slate-300 p-3 text-sm" required>{{ example_brief }}</textarea>
+      <div class="grid md:grid-cols-3 gap-3">
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">Title (optional)</label>
+          <input name="title" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="e.g. Chakan cartons FY26" />
+        </div>
+        <div class="md:col-span-2">
+          <label class="block text-xs text-slate-500 mb-1">Terms override (optional)</label>
+          <input name="terms" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Leave blank to edit later" />
+        </div>
+      </div>
+      <input type="hidden" name="scope" value="" />
+      <button class="btn" type="submit">Open Draft wizard</button>
     </form>
-    <form method="post" action="/crew/draft" class="mt-4">
-      <input type="hidden" name="brief" id="brief-copy" />
-      <button class="text-sm text-indigo-600 hover:underline" type="submit" onclick="document.getElementById('brief-copy').value=document.querySelector('textarea[name=brief]').value">Or draft only (manual steps)</button>
+    <p class="mt-4 text-xs text-slate-500">
+      Optional:
+      <a class="text-indigo-600 hover:underline" href="#" onclick="document.getElementById('e2e-form').classList.toggle('hidden'); return false;">auto-run demo (e2e)</a>
+    </p>
+    <form method="post" action="/crew/run-e2e" class="mt-3 hidden space-y-2" id="e2e-form">
+      <textarea name="brief" rows="4" class="w-full rounded-lg border border-slate-300 p-3 text-sm">{{ example_brief }}</textarea>
+      <button class="btn-sec" type="submit" id="e2e-btn">Run full end-to-end demo</button>
+      <p class="text-xs text-slate-500">One-shot all agents (~1–3 min with Claude). Prefer the sequential wizard for real demos.</p>
     </form>
-    <script>
-      document.getElementById('e2e-form')?.addEventListener('submit', function () {
-        const b = document.getElementById('e2e-btn');
-        if (b) { b.disabled = true; b.textContent = 'Running full crew…'; }
-      });
-    </script>
   </div>
   <div class="md:col-span-2 space-y-4">
     <div class="card">
@@ -31,25 +42,32 @@
       <ul class="space-y-2 text-sm">
         {% for e in events %}
         <li>
-          <a class="text-indigo-600 hover:underline" href="/crew/{{ e.id }}">{{ e.title }}</a>
-          <div class="text-xs text-slate-500">{{ e.id }} · step {{ e.step }} · {{ e.vendors }} vendors</div>
+          <a class="text-indigo-600 hover:underline" href="/crew/{{ e.id }}/wizard">{{ e.title }}</a>
+          <div class="text-xs text-slate-500">{{ e.id }} · {{ e.step }} · {{ e.vendors }} vendors</div>
         </li>
         {% endfor %}
       </ul>
       {% else %}
-      <p class="text-sm text-slate-500">No events yet — run the full demo to start.</p>
+      <p class="text-sm text-slate-500">No events yet — start a draft above.</p>
       {% endif %}
     </div>
     <div class="card text-sm text-slate-600">
-      <h2 class="font-medium text-slate-900 mb-2">Pipeline</h2>
+      <h2 class="font-medium text-slate-900 mb-2">Wizard steps</h2>
       <ol class="list-decimal list-inside space-y-1">
-        <li>RFx Drafter (Haiku)</li>
-        <li>Vendor Dispatcher (SMTP stubbed)</li>
-        <li>Document Parser (Haiku)</li>
-        <li>Normalizer (FX + UOM)</li>
-        <li>Analyst (Sonnet NL Q&amp;A)</li>
+        <li>Draft — brief, fields, 30 line items</li>
+        <li>Send — preview cover email → outbox</li>
+        <li>Inbox — stub replies → parse</li>
+        <li>Compare — INR matrix + knockouts</li>
+        <li>Ask — live analyst chat</li>
+        <li>Award — per-line vendor picks</li>
       </ol>
     </div>
   </div>
 </section>
+<script>
+  document.getElementById('e2e-form')?.addEventListener('submit', function () {
+    const b = document.getElementById('e2e-btn');
+    if (b) { b.disabled = true; b.textContent = 'Running full crew…'; }
+  });
+</script>
 {% endblock %}

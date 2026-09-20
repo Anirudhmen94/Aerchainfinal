@@ -49,7 +49,50 @@ class NormalizedCell(BaseModel):
     original_uom: Optional[str] = None
     flags: list[str] = Field(default_factory=list)
 
+class QuestionnaireResult(BaseModel):
+    """Per-vendor result for one questionnaire item (esp. knockouts)."""
+    question_id: str
+    question: str
+    knockout: bool = False
+    answer: str = ""
+    passed: Optional[bool] = None  # None = unanswered / not evaluated
+
+class InboxMessage(BaseModel):
+    """Stub inbound vendor email (or uploaded reply) awaiting parse."""
+    msg_id: str
+    vendor_id: str = ""
+    vendor_name: str = ""
+    subject: str = ""
+    from_addr: str = ""
+    path: str = ""
+    body_preview: str = ""
+    status: Literal["new", "parsed", "error"] = "new"
+    error: str = ""
+    parsed_vendor_id: str = ""
+
+class KnockoutResult(BaseModel):
+    question_id: str
+    question: str
+    answer: Optional[str] = None
+    passed: bool
+    reason: str = ""
+
+
+class VendorQualification(BaseModel):
+    vendor_id: str
+    passed: bool
+    award_eligible: bool
+    knockout_results: list[KnockoutResult] = Field(default_factory=list)
+    reasons: list[str] = Field(default_factory=list)
+
+
 class ComparisonTable(BaseModel):
     rfx_id: str
     cells: list[NormalizedCell]
     vendor_flags: dict[str, list[str]] = Field(default_factory=dict)
+    qualifications: list[VendorQualification] = Field(default_factory=list)
+    award_eligible_vendors: list[str] = Field(default_factory=list)
+    # Wizard / analyst enrichment (optional; specialists may also set these)
+    qualified_vendors: list[str] = Field(default_factory=list)
+    questionnaire_results: dict[str, list[QuestionnaireResult]] = Field(default_factory=dict)
+    vendor_names: dict[str, str] = Field(default_factory=dict)

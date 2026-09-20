@@ -7,25 +7,34 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@1.9.12"></script>
   <style>
-    .err { @apply bg-red-50 text-red-800 border border-red-200 rounded p-3; }
-    .card { @apply bg-white border border-slate-200 rounded-xl shadow-sm p-5; }
-    .btn { @apply inline-flex items-center gap-2 rounded-lg bg-slate-900 text-white px-4 py-2 text-sm font-medium hover:bg-slate-700; }
-    .btn-sec { @apply inline-flex items-center gap-2 rounded-lg bg-white border border-slate-300 text-slate-800 px-4 py-2 text-sm font-medium hover:bg-slate-50; }
-    .chip { @apply inline-block text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700; }
-    table.matrix td, table.matrix th { @apply border border-slate-200 px-2 py-1 text-xs; }
+    .err { background:#fef2f2; color:#991b1b; border:1px solid #fecaca; border-radius:0.5rem; padding:0.75rem; }
+    .card { background:#fff; border:1px solid #e2e8f0; border-radius:0.75rem; box-shadow:0 1px 2px rgb(0 0 0/0.04); padding:1.25rem; }
+    .btn { display:inline-flex; align-items:center; gap:0.5rem; border-radius:0.5rem; background:#0f172a; color:#fff; padding:0.5rem 1rem; font-size:0.875rem; font-weight:500; }
+    .btn:hover { background:#334155; }
+    .btn:disabled { opacity:0.5; cursor:not-allowed; }
+    .btn-sec { display:inline-flex; align-items:center; gap:0.5rem; border-radius:0.5rem; background:#fff; border:1px solid #cbd5e1; color:#1e293b; padding:0.5rem 1rem; font-size:0.875rem; font-weight:500; }
+    .btn-sec:hover { background:#f8fafc; }
+    .chip { display:inline-block; font-size:0.7rem; padding:0.125rem 0.5rem; border-radius:9999px; background:#f1f5f9; color:#334155; }
+    .chip-ok { background:#dcfce7; color:#166534; }
+    .chip-bad { background:#fee2e2; color:#991b1b; }
+    .chip-warn { background:#fef3c7; color:#92400e; }
+    table.matrix td, table.matrix th { border:1px solid #e2e8f0; padding:0.35rem 0.5rem; font-size:0.75rem; }
+    .step-dot { width:1.75rem; height:1.75rem; border-radius:9999px; display:inline-flex; align-items:center; justify-content:center; font-size:0.7rem; font-weight:600; }
+    .step-done { background:#4f46e5; color:#fff; }
+    .step-cur { background:#312e81; color:#fff; ring:2px; }
+    .step-lock { background:#e2e8f0; color:#64748b; }
+    .step-open { background:#e0e7ff; color:#3730a3; }
+    @media print {
+      .no-print { display:none !important; }
+      body { background:#fff; }
+    }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-900 min-h-screen">
-  <header class="border-b border-slate-200 bg-white">
+  <header class="border-b border-slate-200 bg-white no-print">
     <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
       <a href="/" class="font-semibold tracking-tight">Aerchain <span class="text-indigo-600">RFx Crew</span></a>
-      <nav class="text-sm text-slate-500 flex gap-4">
-        <span class="chip">Drafter</span>
-        <span class="chip">Dispatcher</span>
-        <span class="chip">Parser</span>
-        <span class="chip">Normalizer</span>
-        <span class="chip">Analyst</span>
-      </nav>
+      <nav class="text-sm text-slate-500">Live product wizard</nav>
     </div>
   </header>
   <main class="max-w-6xl mx-auto px-4 py-8">

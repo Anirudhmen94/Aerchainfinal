@@ -15,6 +15,8 @@ from agents.analyst import (
     compute_cheapest_per_qualified,
     compute_vendor_totals,
     normalize_comparison_state,
+    suggest_split_award,
+    validate_award,
     _safe_calculate,
 )
 
@@ -274,3 +276,120 @@ def test_model_env_override(monkeypatch):
     agent.load_comparison(_sample_comparison_dict())
     agent.ask("ping")
     assert mock_client.messages.create.call_args.kwargs["model"] == "claude-test-model"
+
+def test_answer_history_seeding_offline(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    prior = [
+        {"role": "user", "content": "Hello"},
+        {"role": "assistant", "content": "Hi — how can I help with the comparison?"},
+        {"role": "user", "content": "", "extra": "ignore"},  # dropped empty
+        {"role": "system", "content": "nope"},  # unknown role dropped
+    ]
+    result = answer(
+        "Who is cheapest on L1 among qualified?",
+        rfx=_sample_rfx(),
+        comparison=_sample_comparison_dict(),
+        history=prior,
+    )
+    assert "history" in result
+    hist = result["history"]
+    assert len(hist) == 4  # 2 prior + this turn pair
+    assert hist[0] == {"role": "user", "content": "Hello"}
+    assert hist[1]["role"] == "assistant"
+    assert hist[2]["role"] == "user"
+    assert "cheapest" in hist[2]["content"].lower() or "L1" in hist[2]["content"]
+    assert hist[3]["role"] == "assistant"
+    assert result["tool"] == "deterministic_offline"
+    assert isinstance(hist[3]["content"], str) and hist[3]["content"]
+
+
+def test_ask_question_forwards_history(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    result = ask_question(
+        "totals please",
+        _sample_rfx(),
+        _sample_comparison_dict(),
+        history=[{"role": "user", "content": "earlier"}, {"role": "assistant", "content": "ok"}],
+    )
+    assert len(result["history"]) == 4
+
+
+def test_validate_award_rejects_non_qualified_vendor():
+    comparison = _sample_comparison_dict()
+    result = validate_award(
+        comparison,
+        qualifications=["v1", "v2"],
+        awards={"L1": "v3"},  # v3 not qualified
+        rfx=_sample_rfx(),
+    )
+    assert result["ok"] is False
+    assert len(result["rejected"]) == 1
+    assert result["rejected"][0]["reason"] == "not_qualified"
+    assert result["rejected"][0]["vendor_id"] == "v3"
+    assert result["awards"] == []
+
+
+def test_validate_award_rejects_vendor_without_usable_price():
+    comparison = _sample_comparison_dict()
+    # L3: v1 missing price, v2 uncertain — neither usable
+    result = validate_award(
+        comparison,
+        qualifications=["v1", "v2"],
+        awards={"L3": "v1"},
+        rfx=_sample_rfx(),
+    )
+    assert result["ok"] is False
+    assert result["rejected"][0]["reason"] == "no_usable_price"
+    assert result["rejected"][0]["line_id"] == "L3"
+
+
+def test_validate_award_computes_extended_totals_with_qty():
+    comparison = _sample_comparison_dict()
+    result = validate_award(
+        comparison,
+        qualifications=["v1", "v2"],
+        awards={"L1": "v2", "L2": {"vendor_id": "v1"}},  # dict form accepted
+        rfx=_sample_rfx(),
+    )
+    assert result["ok"] is True
+    by_line = {a["line_id"]: a for a in result["awards"]}
+    assert by_line["L1"]["vendor_id"] == "v2"
+    assert by_line["L1"]["unit_price_inr"] == 8.0
+    assert by_line["L1"]["qty"] == 100.0
+    assert by_line["L1"]["extended_inr"] == 800.0
+    assert by_line["L2"]["vendor_id"] == "v1"
+    assert by_line["L2"]["extended_inr"] == 1000.0  # 20 * 50
+    assert result["totals"]["grand_total_inr"] == 1800.0
+    assert result["totals"]["grand_total_partial_inr"] == 1800.0
+    assert result["totals"]["lines_awarded"] == 2
+    assert result["totals"]["lines_rejected"] == 0
+    assert "L3" in result["unawarded_lines"]
+    assert "v2" in result["totals"]["by_vendor"]
+    assert result["totals"]["by_vendor"]["v2"]["extended_inr"] == 800.0
+    assert "line_id" in result["markdown"]
+
+
+def test_suggest_split_award_matches_cheapest_qualified():
+    comparison = _sample_comparison_dict()
+    suggested = suggest_split_award(
+        comparison,
+        qualifications=["v1", "v2"],
+        rfx=_sample_rfx(),
+    )
+    direct = validate_award(
+        comparison,
+        qualifications=["v1", "v2"],
+        awards=None,
+        rfx=_sample_rfx(),
+        fill_missing_with_cheapest=True,
+    )
+    assert suggested["ok"] is True
+    assert suggested["awards"] == direct["awards"]
+    by_line = {a["line_id"]: a for a in suggested["awards"]}
+    # L1 cheapest qualified = v2 @ 8; L2 = v1 @ 20
+    assert by_line["L1"]["vendor_id"] == "v2"
+    assert by_line["L2"]["vendor_id"] == "v1"
+    assert "L3" not in by_line  # no usable qualified price
+    assert by_line["L1"]["extended_inr"] == 800.0
+    assert by_line["L2"]["extended_inr"] == 1000.0
+

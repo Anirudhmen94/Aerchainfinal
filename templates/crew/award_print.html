@@ -1,0 +1,34 @@
+{% extends "crew/base.html" %}
+{% block title %}Award export · {{ rfx.title }}{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="flex justify-between items-start mb-4 no-print">
+    <h1 class="text-xl font-semibold">Award export</h1>
+    <button class="btn" onclick="window.print()">Print</button>
+  </div>
+  <h1 class="text-xl font-semibold">{{ rfx.title }}</h1>
+  <p class="text-sm text-slate-600 mb-4">{{ rfx.rfx_id }} · Award decisions</p>
+  {% if award_summary %}
+  <p class="text-lg font-semibold mb-3">Total: ₹{{ '%.2f'|format(award_summary.total_inr or 0) }}</p>
+  <table class="matrix w-full mb-4">
+    <thead><tr><th>Line</th><th>Vendor</th><th>₹/pc</th><th>Qty</th><th>Extended</th></tr></thead>
+    <tbody>
+    {% for row in award_summary.lines %}
+      <tr>
+        <td>{{ row.line_id }}{% if row.description %} — {{ row.description }}{% endif %}</td>
+        <td>{{ row.vendor_name or row.vendor_id }}</td>
+        <td class="text-right">{% if row.unit_price_inr is not none %}{{ '%.2f'|format(row.unit_price_inr) }}{% endif %}</td>
+        <td class="text-right">{{ row.qty or '' }}</td>
+        <td class="text-right">{% if row.extended_inr is not none %}{{ '%.2f'|format(row.extended_inr) }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if award_summary.markdown %}
+  <pre class="text-xs whitespace-pre-wrap bg-slate-50 p-3 rounded">{{ award_summary.markdown }}</pre>
+  {% endif %}
+  {% else %}
+  <p class="text-sm text-slate-500">No awards saved yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

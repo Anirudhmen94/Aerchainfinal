@@ -1,7 +1,7 @@
-"""Aerchain RFx Crew — FastAPI entrypoint for the 5-agent pipeline.
+"""Aerchain RFx Crew — sequential LIVE PRODUCT wizard.
 
 Local:  uvicorn app_crew:app --port 8518 --reload
-Vercel: detects module-level `app` in app_crew.py (see vercel.json).
+Vercel: module-level `app` (see vercel.json).
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse  # no
 from fastapi.templating import Jinja2Templates  # noqa: E402
 
 from orchestrator.pipeline import (  # noqa: E402
+    WIZARD_STEPS,
     RFxPipeline,
     STORE_DIR,
     VENDOR_DIR,
@@ -27,7 +28,7 @@ from orchestrator.pipeline import (  # noqa: E402
 ROOT = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(ROOT / "templates"))
 
-app = FastAPI(title="Aerchain RFx Crew", version="0.2.0")
+app = FastAPI(title="Aerchain RFx Crew", version="0.3.0")
 
 _SESSIONS: dict[str, RFxPipeline] = {}
 
@@ -50,8 +51,46 @@ def _save(pipe: RFxPipeline) -> None:
 
 
 def _render(request: Request, name: str, **ctx: Any) -> HTMLResponse:
-    # Starlette >=0.37: TemplateResponse(request, name, context)
     return templates.TemplateResponse(request, name, ctx)
+
+
+def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
+    step = pipe.wizard_step if pipe.wizard_step in WIZARD_STEPS else "draft"
+    unlocked = pipe.unlocked_steps()
+    done = pipe.completion()
+    # Per-line eligible vendors for Award step
+    eligible_by_line: dict[str, list[dict[str, Any]]] = {}
+    if pipe.rfx and pipe.comparison:
+        for li in pipe.rfx.line_items:
+            eligible_by_line[li.line_id] = pipe.eligible_vendors_for_line(li.line_id)
+    # Matrix helpers
+    cell_map: dict[tuple[str, str], Any] = {}
+    vendors_in_matrix: list[str] = []
+    if pipe.comparison:
+        seen: list[str] = []
+        for c in pipe.comparison.cells:
+            cell_map[(c.line_id, c.vendor_id)] = c
+            if c.vendor_id not in seen:
+                seen.append(c.vendor_id)
+        vendors_in_matrix = seen
+    qual_map = {}
+    if pipe.comparison:
+        for q in pipe.comparison.qualifications or []:
+            qual_map[q.vendor_id] = q
+    return {
+        "pipe": pipe,
+        "rfx": pipe.rfx,
+        "step": step,
+        "steps": WIZARD_STEPS,
+        "unlocked": unlocked,
+        "done": done,
+        "eligible_by_line": eligible_by_line,
+        "cell_map": cell_map,
+        "vendors_in_matrix": vendors_in_matrix,
+        "qual_map": qual_map,
+        "award_summary": pipe.award_summary() if pipe.awards or pipe.award_validation else None,
+        "snapshot": pipe.snapshot(),
+    }
 
 
 @app.get("/healthz")
@@ -59,6 +98,7 @@ def healthz():
     return {
         "ok": True,
         "app": "rfx-crew",
+        "wizard": WIZARD_STEPS,
         "agents": [
             "rfx_drafter",
             "vendor_dispatcher",
@@ -81,7 +121,7 @@ def home(request: Request):
                     {
                         "id": rfx.get("rfx_id", path.stem),
                         "title": rfx.get("title", "Untitled"),
-                        "step": data.get("step", ""),
+                        "step": data.get("wizard_step") or data.get("step", ""),
                         "vendors": len(rfx.get("vendors") or []),
                     }
                 )
@@ -95,11 +135,34 @@ def home(request: Request):
     return _render(request, "crew/index.html", events=events, example_brief=example)
 
 
-@app.post("/crew/draft", response_class=HTMLResponse)
-def crew_draft(request: Request, brief: str = Form(...)):
-    if len(brief.strip()) < 20:
+# ── Start / e2e ────────────────────────────────────────────────────────
+
+
+@app.post("/crew/start", response_class=HTMLResponse)
+def crew_start(
+    request: Request,
+    brief: str = Form(...),
+    title: str = Form(""),
+    scope: str = Form(""),
+    terms: str = Form(""),
+):
+    if len(brief.strip()) < 10:
         return HTMLResponse(
-            "<div class='err'>Please describe the requirement in at least a couple of sentences.</div>",
+            "<div class='err'>Please describe the requirement (at least a couple of sentences).</div>",
+            status_code=400,
+        )
+    pipe = RFxPipeline()
+    pipe.start_draft(brief, title=title, scope=scope, terms=terms)
+    _save(pipe)
+    return RedirectResponse(f"/crew/{pipe.rfx.rfx_id}/wizard?step=draft", status_code=303)
+
+
+@app.post("/crew/draft", response_class=HTMLResponse)
+def crew_draft_legacy(request: Request, brief: str = Form(...)):
+    """Back-compat: start + generate in one shot."""
+    if len(brief.strip()) < 10:
+        return HTMLResponse(
+            "<div class='err'>Please describe the requirement.</div>",
             status_code=400,
         )
     pipe = RFxPipeline()
@@ -108,15 +171,14 @@ def crew_draft(request: Request, brief: str = Form(...)):
     except Exception as exc:
         return HTMLResponse(f"<div class='err'>Draft failed: {exc}</div>", status_code=400)
     _save(pipe)
-    return RedirectResponse(f"/crew/{pipe.rfx.rfx_id}", status_code=303)
+    return RedirectResponse(f"/crew/{pipe.rfx.rfx_id}/wizard?step=draft", status_code=303)
 
 
 @app.post("/crew/run-e2e", response_class=HTMLResponse)
 def crew_run_e2e(request: Request, brief: str = Form(...)):
-    """One-click end-to-end: all five agents, then land on the full board."""
-    if len(brief.strip()) < 20:
+    if len(brief.strip()) < 10:
         return HTMLResponse(
-            "<div class='err'>Please describe the requirement in at least a couple of sentences.</div>",
+            "<div class='err'>Please describe the requirement.</div>",
             status_code=400,
         )
     pipe = RFxPipeline()
@@ -128,7 +190,7 @@ def crew_run_e2e(request: Request, brief: str = Form(...)):
             status_code=400,
         )
     _save(pipe)
-    return RedirectResponse(f"/crew/{pipe.rfx.rfx_id}", status_code=303)
+    return RedirectResponse(f"/crew/{pipe.rfx.rfx_id}/wizard?step=award", status_code=303)
 
 
 @app.post("/api/run-e2e")
@@ -139,21 +201,157 @@ def api_run_e2e(brief: str = Form(...)):
     except Exception as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
     _save(pipe)
-    return JSONResponse({"ok": True, "rfx_id": pipe.rfx.rfx_id if pipe.rfx else None, "snapshot": snap})
+    return JSONResponse(
+        {"ok": True, "rfx_id": pipe.rfx.rfx_id if pipe.rfx else None, "snapshot": snap}
+    )
+
+
+# ── Wizard shell ───────────────────────────────────────────────────────
+
 
 @app.get("/crew/{rfx_id}", response_class=HTMLResponse)
-def crew_board(request: Request, rfx_id: str):
+def crew_board_redirect(rfx_id: str):
+    return RedirectResponse(f"/crew/{rfx_id}/wizard", status_code=303)
+
+
+@app.get("/crew/{rfx_id}/wizard", response_class=HTMLResponse)
+def crew_wizard(request: Request, rfx_id: str, step: Optional[str] = None):
     pipe = _session(rfx_id)
     if not pipe.rfx:
         return HTMLResponse("RFx not found", status_code=404)
-    return _render(
-        request,
-        "crew/board.html",
-        pipe=pipe,
-        rfx=pipe.rfx,
-        snapshot=pipe.snapshot(),
-        vendor_dir=str(VENDOR_DIR),
+    if step and step in WIZARD_STEPS:
+        try:
+            pipe.set_wizard_step(step)
+            _save(pipe)
+        except RuntimeError:
+            pass  # stay on current if locked
+    ctx = _wizard_ctx(pipe)
+    return _render(request, "crew/wizard.html", **ctx)
+
+
+@app.post("/crew/{rfx_id}/wizard/goto", response_class=HTMLResponse)
+def crew_wizard_goto(rfx_id: str, step: str = Form(...)):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    try:
+        pipe.set_wizard_step(step)
+        _save(pipe)
+    except Exception as exc:
+        return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step={pipe.wizard_step}", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/wizard/next", response_class=HTMLResponse)
+def crew_wizard_next(rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    pipe.advance()
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step={pipe.wizard_step}", status_code=303)
+
+
+# ── Draft step ─────────────────────────────────────────────────────────
+
+
+@app.post("/crew/{rfx_id}/draft/fields", response_class=HTMLResponse)
+def crew_draft_fields(
+    rfx_id: str,
+    brief: str = Form(""),
+    title: str = Form(""),
+    scope: str = Form(""),
+    terms: str = Form(""),
+):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    pipe.update_draft_fields(
+        brief=brief or None,
+        title=title or None,
+        scope=scope or None,
+        terms=terms or None,
     )
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=draft", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/draft/generate", response_class=HTMLResponse)
+def crew_draft_generate(
+    rfx_id: str,
+    brief: str = Form(""),
+    title: str = Form(""),
+    scope: str = Form(""),
+    terms: str = Form(""),
+):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    pipe.update_draft_fields(
+        brief=brief or None,
+        title=title or None,
+        scope=scope or None,
+        terms=terms or None,
+    )
+    try:
+        if pipe.rfx.line_items:
+            pipe.regenerate_lines(brief=pipe.brief or brief)
+        else:
+            pipe.draft(pipe.brief or brief)
+    except Exception as exc:
+        return HTMLResponse(
+            f"<div class='err'>Generate failed: {exc}</div>", status_code=400
+        )
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=draft", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/draft/lines", response_class=HTMLResponse)
+async def crew_draft_lines(request: Request, rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    form = await request.form()
+    # Expect parallel arrays line_id[], description[], qty[], uom[]
+    ids = form.getlist("line_id")
+    descs = form.getlist("description")
+    qtys = form.getlist("qty")
+    uoms = form.getlist("uom")
+    items = []
+    for i in range(max(len(ids), len(descs))):
+        items.append(
+            {
+                "line_id": ids[i] if i < len(ids) else f"L{i+1:02d}",
+                "description": descs[i] if i < len(descs) else "",
+                "qty": qtys[i] if i < len(qtys) else 0,
+                "uom": uoms[i] if i < len(uoms) else "piece",
+            }
+        )
+    try:
+        pipe.update_line_items(items)
+    except Exception as exc:
+        return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=draft", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/draft/continue", response_class=HTMLResponse)
+def crew_draft_continue(rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    if not pipe.rfx.line_items:
+        return HTMLResponse(
+            "<div class='err'>Generate line items before continuing.</div>",
+            status_code=400,
+        )
+    pipe.refresh_cover_previews()
+    pipe.set_wizard_step("send")
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=send", status_code=303)
+
+
+# ── Send step ──────────────────────────────────────────────────────────
 
 
 @app.post("/crew/{rfx_id}/dispatch", response_class=HTMLResponse)
@@ -161,13 +359,112 @@ def crew_dispatch(request: Request, rfx_id: str):
     pipe = _session(rfx_id)
     if not pipe.rfx:
         return HTMLResponse("RFx not found", status_code=404)
-    pipe.dispatch()
+    try:
+        pipe.dispatch()
+    except Exception as exc:
+        return HTMLResponse(f"<div class='err'>Send failed: {exc}</div>", status_code=400)
     _save(pipe)
-    if request.headers.get("hx-request"):
-        return _render(request, "crew/partials/dispatch.html", pipe=pipe, rfx=pipe.rfx)
-    return RedirectResponse(f"/crew/{rfx_id}", status_code=303)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=send", status_code=303)
 
 
+@app.post("/crew/{rfx_id}/send/continue", response_class=HTMLResponse)
+def crew_send_continue(rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    if not pipe.dispatch_log:
+        return HTMLResponse(
+            "<div class='err'>Send to vendors before continuing.</div>", status_code=400
+        )
+    pipe.seed_inbox()
+    pipe.set_wizard_step("inbox")
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=inbox", status_code=303)
+
+
+# ── Inbox step ─────────────────────────────────────────────────────────
+
+
+@app.post("/crew/{rfx_id}/inbox/seed", response_class=HTMLResponse)
+def crew_inbox_seed(rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    pipe.seed_inbox(force=True)
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=inbox", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/inbox/parse", response_class=HTMLResponse)
+def crew_inbox_parse(rfx_id: str, msg_id: str = Form(...)):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    try:
+        pipe.parse_inbox_message(msg_id)
+    except Exception as exc:
+        return HTMLResponse(f"<div class='err'>Parse failed: {exc}</div>", status_code=400)
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=inbox", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/inbox/parse-all", response_class=HTMLResponse)
+def crew_inbox_parse_all(rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    try:
+        pipe.parse_all_inbox()
+    except Exception as exc:
+        return HTMLResponse(
+            f"<div class='err'>Parse all failed: {exc}</div>", status_code=400
+        )
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=inbox", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/inbox/upload", response_class=HTMLResponse)
+async def crew_inbox_upload(
+    rfx_id: str,
+    files: list[UploadFile] | None = File(None),
+    vendor_id: str = Form(""),
+):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    if files:
+        upload_dir = ROOT / "data" / "uploads" / rfx_id
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        for f in files:
+            if not f.filename:
+                continue
+            dest = upload_dir / Path(f.filename).name
+            dest.write_bytes(await f.read())
+            pipe.add_inbox_upload(dest, vendor_id=vendor_id)
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=inbox", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/inbox/continue", response_class=HTMLResponse)
+def crew_inbox_continue(rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    if not pipe.quotes:
+        return HTMLResponse(
+            "<div class='err'>Parse at least one vendor reply before continuing.</div>",
+            status_code=400,
+        )
+    try:
+        pipe.normalize()
+    except Exception as exc:
+        return HTMLResponse(f"<div class='err'>Normalize failed: {exc}</div>", status_code=400)
+    pipe.set_wizard_step("compare")
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=compare", status_code=303)
+
+
+# legacy ingest alias
 @app.post("/crew/{rfx_id}/ingest", response_class=HTMLResponse)
 async def crew_ingest(
     request: Request,
@@ -192,9 +489,10 @@ async def crew_ingest(
     else:
         pipe.ingest(directory=VENDOR_DIR)
     _save(pipe)
-    if request.headers.get("hx-request"):
-        return _render(request, "crew/partials/quotes.html", pipe=pipe, rfx=pipe.rfx)
-    return RedirectResponse(f"/crew/{rfx_id}", status_code=303)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=inbox", status_code=303)
+
+
+# ── Compare step ───────────────────────────────────────────────────────
 
 
 @app.post("/crew/{rfx_id}/normalize", response_class=HTMLResponse)
@@ -207,9 +505,25 @@ def crew_normalize(request: Request, rfx_id: str):
     except Exception as exc:
         return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
     _save(pipe)
-    if request.headers.get("hx-request"):
-        return _render(request, "crew/partials/matrix.html", pipe=pipe, rfx=pipe.rfx)
-    return RedirectResponse(f"/crew/{rfx_id}", status_code=303)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=compare", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/compare/continue", response_class=HTMLResponse)
+def crew_compare_continue(rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    if not pipe.comparison:
+        try:
+            pipe.normalize()
+        except Exception as exc:
+            return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
+    pipe.set_wizard_step("ask")
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=ask", status_code=303)
+
+
+# ── Ask step ───────────────────────────────────────────────────────────
 
 
 @app.post("/crew/{rfx_id}/ask", response_class=HTMLResponse)
@@ -222,14 +536,72 @@ def crew_ask(request: Request, rfx_id: str, question: str = Form(...)):
     except Exception as exc:
         return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
     _save(pipe)
-    return _render(
-        request,
-        "crew/partials/answer.html",
-        pipe=pipe,
-        rfx=pipe.rfx,
-        question=question,
-        result=result,
-    )
+    if request.headers.get("hx-request"):
+        return _render(
+            request,
+            "crew/partials/chat_turn.html",
+            pipe=pipe,
+            rfx=pipe.rfx,
+            turn=result,
+        )
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=ask", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/ask/continue", response_class=HTMLResponse)
+def crew_ask_continue(rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    # Visiting ask unlocks award
+    pipe.wizard_step = "ask"
+    pipe._persist()
+    pipe.set_wizard_step("award")
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=award", status_code=303)
+
+
+# ── Award step ─────────────────────────────────────────────────────────
+
+
+@app.post("/crew/{rfx_id}/award/save", response_class=HTMLResponse)
+async def crew_award_save(request: Request, rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    form = await request.form()
+    awards: dict[str, str] = {}
+    for li in pipe.rfx.line_items:
+        vid = str(form.get(f"award_{li.line_id}") or form.get(li.line_id) or "").strip()
+        if vid:
+            awards[li.line_id] = vid
+    try:
+        pipe.save_awards(awards)
+    except Exception as exc:
+        return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=award", status_code=303)
+
+
+@app.post("/crew/{rfx_id}/award/suggest", response_class=HTMLResponse)
+def crew_award_suggest(rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    try:
+        pipe.suggest_awards()
+    except Exception as exc:
+        return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=award", status_code=303)
+
+
+@app.get("/crew/{rfx_id}/award/print", response_class=HTMLResponse)
+def crew_award_print(request: Request, rfx_id: str):
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    ctx = _wizard_ctx(pipe)
+    return _render(request, "crew/award_print.html", **ctx)
 
 
 @app.get("/crew/{rfx_id}/snapshot")

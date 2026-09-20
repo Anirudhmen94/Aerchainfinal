@@ -21,16 +21,30 @@ except Exception:
 try:
     from agents.document_parser import (
         DocumentParserAgent,
+        list_inbox,
+        parse_all,
+        parse_one,
         parse_response,
         parse_vendor_dir,
         parse_vendor_file,
+        seed_inbox,
     )
+
+    # Optional aliases if present under alternate names
+    try:
+        from agents.document_parser import DocumentParserAgent as _DPA  # noqa: F401
+    except Exception:
+        pass
 
     __all__.extend(
         [
             "parse_response",
             "parse_vendor_file",
             "parse_vendor_dir",
+            "parse_one",
+            "parse_all",
+            "seed_inbox",
+            "list_inbox",
             "DocumentParserAgent",
         ]
     )

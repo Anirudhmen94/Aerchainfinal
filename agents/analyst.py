@@ -50,6 +50,28 @@ def _usable(cell: dict[str, Any]) -> bool:
     return status in USABLE_STATUSES and cell.get("unit_price_inr") is not None
 
 
+
+def _normalize_history(history: Optional[list[Any]]) -> list[dict[str, str]]:
+    """Normalize chat turns: keep user|assistant, coerce content to str, drop empty."""
+    if not history:
+        return []
+    out: list[dict[str, str]] = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        if role not in ("user", "assistant"):
+            continue
+        raw = item.get("content", "")
+        content = "" if raw is None else str(raw)
+        if not content.strip():
+            continue
+        out.append({"role": str(role), "content": content})
+    return out
+
+
+MAX_CHAT_HISTORY = 12  # 6 turns
+
 def compute_cheapest_per_qualified(
     cells: list[dict[str, Any]],
     qualified_vendors: Optional[list[str]] = None,
@@ -427,14 +449,20 @@ class AnalystAgent:
             )
         return f"{SYSTEM_RULES}{fx_note}\nCOMPARISON_DATA:\n{payload}"
 
-    def ask(self, question: str) -> str:
+    def ask(self, question: str, history: list | None = None) -> str:
         self._require_state()
-        client = self._ensure_client()
         q = (question or "").strip()
         if not q:
             return "Ask a question about the loaded comparison."
 
-        messages = list(self.chat_history) + [{"role": "user", "content": q}]
+        if history is not None:
+            self.chat_history = _normalize_history(history)
+
+        # Cap prior turns sent to Claude (last 12 messages = 6 turns)
+        prior = list(self.chat_history[-MAX_CHAT_HISTORY:])
+        messages = prior + [{"role": "user", "content": q}]
+
+        client = self._ensure_client()
         resp = client.messages.create(
             model=_model_name(),
             max_tokens=4096,
@@ -527,10 +555,15 @@ def _gaps(cells: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def answer(question: str, rfx: RFxLike = None, comparison: ComparisonLike = None) -> dict[str, Any]:
+def answer(
+    question: str,
+    rfx: RFxLike = None,
+    comparison: ComparisonLike = None,
+    history: Optional[list[Any]] = None,
+) -> dict[str, Any]:
     """Manager-facing entrypoint. Returns answer prose plus deterministic tables.
 
-    Keys: answer, markdown, tables, data, caveats, tool, model.
+    Keys: answer, markdown, tables, data, caveats, tool, model, history.
     Uses Claude when available; deterministic tables are always computed in Python.
     """
     if comparison is None:
@@ -538,6 +571,9 @@ def answer(question: str, rfx: RFxLike = None, comparison: ComparisonLike = None
 
     agent = AnalystAgent()
     agent.load_comparison(comparison, rfx=rfx)
+    if history is not None:
+        agent.chat_history = _normalize_history(history)
+    seeded = list(agent.chat_history)
     st = agent.state
     assert st is not None
 
@@ -595,6 +631,7 @@ def answer(question: str, rfx: RFxLike = None, comparison: ComparisonLike = None
         user_msg = user_msg + "\n\n" + "\n\n".join(inject_bits)
 
     tool = "llm_ask"
+    q_display = (question or "").strip()
     try:
         if "award" in intents and not any(
             x in (question or "").lower() for x in ("what if", "sensitivity", "apply discount")
@@ -608,6 +645,17 @@ def answer(question: str, rfx: RFxLike = None, comparison: ComparisonLike = None
         text = _offline_answer(question, intents, tables, caveats, st)
         tool = "deterministic_offline"
         caveats.append(f"LLM unavailable: {exc}")
+        # Multi-turn UI: still append user+assistant (deterministic prose) when offline
+        agent.chat_history = list(seeded) + [
+            {"role": "user", "content": q_display or question or ""},
+            {"role": "assistant", "content": text},
+        ]
+    else:
+        # Normalize returned history to original question + assistant (UI-friendly)
+        agent.chat_history = list(seeded) + [
+            {"role": "user", "content": q_display or question or ""},
+            {"role": "assistant", "content": text},
+        ]
 
     return {
         "answer": text,
@@ -617,6 +665,7 @@ def answer(question: str, rfx: RFxLike = None, comparison: ComparisonLike = None
         "caveats": caveats,
         "tool": tool,
         "model": _model_name(),
+        "history": list(agent.chat_history),
     }
 
 
@@ -675,16 +724,25 @@ def ask_question(
     rfx: RFxLike = None,
     comparison: ComparisonLike = None,
     table: ComparisonLike = None,
+    history: Optional[list[Any]] = None,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Compat entrypoint.
 
-    Preferred (manager): ask_question(question, rfx, comparison)
+    Preferred (manager): ask_question(question, rfx, comparison, history=...)
     Legacy stub: ask_question(table, question, rfx=...)
     """
+    if history is None and "history" in kwargs:
+        history = kwargs.pop("history")
+
     # Keyword path
     if isinstance(question, str) and (comparison is not None or table is not None or kwargs.get("comparison") is not None):
-        return answer(question, rfx=rfx, comparison=comparison if comparison is not None else table)
+        return answer(
+            question,
+            rfx=rfx,
+            comparison=comparison if comparison is not None else table,
+            history=history,
+        )
 
     # Legacy positional: ask_question(table, question, rfx)
     if question is not None and not isinstance(question, str):
@@ -697,13 +755,322 @@ def ask_question(
         if isinstance(rfx, str):
             legacy_q = rfx
             legacy_rfx = comparison if not isinstance(comparison, str) else None
-        return answer(str(legacy_q or ""), rfx=legacy_rfx, comparison=legacy_table)
+        return answer(str(legacy_q or ""), rfx=legacy_rfx, comparison=legacy_table, history=history)
 
     if isinstance(question, str) and comparison is None and table is None:
         # Maybe only question + rfx kwargs missing comparison — raise clearly
         raise ValueError("comparison (or table=) is required")
 
-    return answer(str(question or ""), rfx=rfx, comparison=comparison if comparison is not None else table)
+    return answer(
+        str(question or ""),
+        rfx=rfx,
+        comparison=comparison if comparison is not None else table,
+        history=history,
+    )
+
+
+
+def _resolve_qualifications(
+    qualifications: Any,
+    comparison_state: dict[str, Any],
+    cells: list[dict[str, Any]],
+) -> tuple[list[str], bool]:
+    """Return (qualified_vendor_ids, assumed_all)."""
+    if qualifications is None:
+        qv = comparison_state.get("qualified_vendors")
+        if qv is not None:
+            return [str(v) for v in qv], False
+        all_vids = sorted({str(c.get("vendor_id")) for c in cells if c.get("vendor_id")})
+        return all_vids, True
+    if isinstance(qualifications, dict):
+        out = [str(vid) for vid, ok in qualifications.items() if ok]
+        return out, False
+    if isinstance(qualifications, (list, tuple, set)):
+        return [str(v) for v in qualifications], False
+    raise TypeError(f"Unsupported qualifications type: {type(qualifications)!r}")
+
+
+def _extract_award_vendor(value: Any) -> Optional[str]:
+    """Accept vendor_id str or {vendor_id: ...} / {"vendor_id": id} dicts."""
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        if "vendor_id" in value and value.get("vendor_id") is not None:
+            return str(value["vendor_id"])
+        if not value:
+            return None
+        # Treat single (or first) key as vendor_id
+        return str(next(iter(value.keys())))
+    return str(value)
+
+
+def _qty_for_line(
+    line_id: str,
+    line_meta: dict[str, dict[str, Any]],
+) -> Optional[float]:
+    meta = line_meta.get(line_id) or {}
+    qty = meta.get("qty")
+    if qty is None:
+        return None
+    try:
+        return float(qty)
+    except (TypeError, ValueError):
+        return None
+
+
+def _cell_lookup(
+    cells: list[dict[str, Any]],
+) -> dict[tuple[str, str], dict[str, Any]]:
+    out: dict[tuple[str, str], dict[str, Any]] = {}
+    for raw in cells:
+        cell = _cell_as_dict(raw)
+        lid = cell.get("line_id")
+        vid = cell.get("vendor_id")
+        if lid is None or vid is None:
+            continue
+        out[(str(lid), str(vid))] = cell
+    return out
+
+
+def _awards_markdown(
+    awards: list[dict[str, Any]],
+    totals: dict[str, Any],
+) -> str:
+    headers = ["line_id", "vendor", "unit_price_inr", "qty", "extended_inr", "status"]
+    lines = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
+    for a in awards:
+        qty = a.get("qty")
+        ext = a.get("extended_inr")
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(a.get("line_id")),
+                    str(a.get("vendor_name") or a.get("vendor_id")),
+                    f"{float(a['unit_price_inr']):.2f}" if a.get("unit_price_inr") is not None else "—",
+                    f"{float(qty):.4g}" if qty is not None else "—",
+                    f"{float(ext):.2f}" if ext is not None else "—",
+                    str(a.get("status") or ""),
+                ]
+            )
+            + " |"
+        )
+    gt = totals.get("grand_total_inr")
+    gtp = totals.get("grand_total_partial_inr", 0.0)
+    footer = (
+        f"\n**Totals:** lines_awarded={totals.get('lines_awarded', 0)}, "
+        f"lines_rejected={totals.get('lines_rejected', 0)}, "
+        f"grand_total_inr={gt if gt is not None else '—'} "
+        f"(partial ₹{float(gtp):,.2f})"
+    )
+    return "\n".join(lines) + footer
+
+
+def validate_award(
+    comparison: ComparisonLike,
+    qualifications: Any = None,
+    awards: Optional[dict[str, Any]] = None,
+    rfx: RFxLike = None,
+    *,
+    fill_missing_with_cheapest: bool = False,
+) -> dict[str, Any]:
+    """Pure validation / fill of line awards for the Award step UI (no LLM)."""
+    # Peek at raw qualified_vendors before normalize defaults them to all vendors
+    if isinstance(comparison, ComparisonTable):
+        raw_base = comparison.model_dump()
+    elif isinstance(comparison, dict):
+        raw_base = comparison
+    elif hasattr(comparison, "model_dump"):
+        raw_base = comparison.model_dump()
+    else:
+        raw_base = {}
+    raw_qualified = raw_base.get("qualified_vendors")
+
+    st = normalize_comparison_state(comparison, rfx=rfx)
+    cells = st["cells"]
+    line_meta = st.get("line_meta") or {}
+    names = st.get("vendor_names") or {}
+    line_ids = sorted({str(c.get("line_id")) for c in cells if c.get("line_id") is not None})
+    line_id_set = set(line_ids)
+    # Prefer explicit qualifications arg; else raw comparison field (not normalize default)
+    resolve_state = dict(st)
+    if qualifications is None:
+        resolve_state["qualified_vendors"] = raw_qualified  # may be None → assume all
+    qualified, assumed_all = _resolve_qualifications(qualifications, resolve_state, cells)
+    qual_set = set(qualified)
+    lookup = _cell_lookup(cells)
+
+    requested_empty = awards is None or (isinstance(awards, dict) and len(awards) == 0)
+    raw_awards: dict[str, Any] = dict(awards) if isinstance(awards, dict) else {}
+
+    valid: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    awarded_lines: set[str] = set()
+
+    def _try_award(line_id: str, vendor_id: Optional[str], *, from_fill: bool = False) -> None:
+        lid = str(line_id)
+        if vendor_id is None or str(vendor_id).strip() == "":
+            rejected.append(
+                {
+                    "line_id": lid,
+                    "vendor_id": vendor_id,
+                    "reason": "missing_vendor",
+                    "detail": "No vendor_id provided for award",
+                }
+            )
+            return
+        vid = str(vendor_id)
+        if lid not in line_id_set:
+            rejected.append(
+                {
+                    "line_id": lid,
+                    "vendor_id": vid,
+                    "reason": "unknown_line",
+                    "detail": f"Line {lid} not present in comparison cells",
+                }
+            )
+            return
+        if vid not in qual_set:
+            rejected.append(
+                {
+                    "line_id": lid,
+                    "vendor_id": vid,
+                    "reason": "not_qualified",
+                    "detail": f"Vendor {vid} is not in qualified set",
+                }
+            )
+            return
+        cell = lookup.get((lid, vid))
+        if cell is None or not _usable(cell):
+            rejected.append(
+                {
+                    "line_id": lid,
+                    "vendor_id": vid,
+                    "reason": "no_usable_price",
+                    "detail": (
+                        f"No usable price (status in ok|converted with unit_price_inr) "
+                        f"for {vid} on {lid}"
+                    ),
+                }
+            )
+            return
+        unit = float(cell["unit_price_inr"])
+        qty = _qty_for_line(lid, line_meta)
+        row: dict[str, Any] = {
+            "line_id": lid,
+            "vendor_id": vid,
+            "vendor_name": names.get(vid, vid),
+            "unit_price_inr": unit,
+            "qty": qty,
+            "extended_inr": round(qty * unit, 2) if qty is not None else None,
+            "status": cell.get("status"),
+        }
+        valid.append(row)
+        awarded_lines.add(lid)
+
+    for lid, val in raw_awards.items():
+        _try_award(str(lid), _extract_award_vendor(val))
+
+    if fill_missing_with_cheapest:
+        cheapest = compute_cheapest_per_qualified(
+            cells,
+            qualified_vendors=qualified,
+            vendor_names=names,
+            line_meta=line_meta,
+        )
+        # Fill only lines not present in the user-provided awards map
+        present_in_awards = {str(k) for k in raw_awards.keys()}
+        for row in cheapest:
+            lid = str(row["line_id"])
+            if lid in present_in_awards or lid in awarded_lines:
+                continue
+            _try_award(lid, row.get("vendor_id"), from_fill=True)
+
+    unawarded = [lid for lid in line_ids if lid not in awarded_lines]
+
+    by_vendor: dict[str, dict[str, Any]] = {}
+    partial_sum = 0.0
+    missing_qty = False
+    for a in valid:
+        vid = a["vendor_id"]
+        bucket = by_vendor.setdefault(
+            vid,
+            {
+                "vendor_name": a.get("vendor_name") or names.get(vid, vid),
+                "lines": 0,
+                "extended_inr": 0.0,
+                "extended_partial_inr": 0.0,
+                "_missing_qty": False,
+            },
+        )
+        bucket["lines"] += 1
+        if a.get("extended_inr") is not None:
+            bucket["extended_partial_inr"] += float(a["extended_inr"])
+            partial_sum += float(a["extended_inr"])
+        else:
+            missing_qty = True
+            bucket["_missing_qty"] = True
+
+    for vid, bucket in by_vendor.items():
+        if bucket.pop("_missing_qty", False):
+            bucket["extended_inr"] = None
+        else:
+            bucket["extended_inr"] = round(float(bucket["extended_partial_inr"]), 2)
+        bucket["extended_partial_inr"] = round(float(bucket["extended_partial_inr"]), 2)
+
+    if not valid:
+        grand_total: float | None = None
+    elif missing_qty:
+        grand_total = None
+    else:
+        grand_total = round(partial_sum, 2)
+
+    totals = {
+        "grand_total_inr": grand_total,
+        "grand_total_partial_inr": round(partial_sum, 2),
+        "by_vendor": by_vendor,
+        "lines_awarded": len(valid),
+        "lines_rejected": len(rejected),
+    }
+
+    ok = (len(rejected) == 0) and (
+        len(valid) >= 1 or (requested_empty and not fill_missing_with_cheapest)
+    )
+
+    md = _awards_markdown(valid, totals)
+    if assumed_all:
+        md += (
+            "\n\n_Note: no qualifications provided and comparison.qualified_vendors "
+            "missing — treated all vendors appearing in cells as qualified."
+        )
+
+    return {
+        "ok": ok,
+        "awards": valid,
+        "rejected": rejected,
+        "unawarded_lines": unawarded,
+        "totals": totals,
+        "markdown": md,
+        "qualified_vendors": list(qualified),
+    }
+
+
+def suggest_split_award(
+    comparison: ComparisonLike,
+    qualifications: Any = None,
+    rfx: RFxLike = None,
+) -> dict[str, Any]:
+    """Convenience: cheapest qualified vendor per line (pure, no LLM)."""
+    return validate_award(
+        comparison,
+        qualifications=qualifications,
+        awards=None,
+        rfx=rfx,
+        fill_missing_with_cheapest=True,
+    )
 
 
 # Stub-compatible module helpers (operate on ComparisonTable)

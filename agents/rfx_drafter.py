@@ -1,11 +1,19 @@
-"""Agent 1 — RFx Drafter.
+"""Agent 1 — RFx Drafter (LIVE PRODUCT wizard Draft stage).
 
-Conversational AI co-pilot: turns a plain-language buyer brief into a
-validated RFx (scope/title, 30 line items, questionnaire, vendors, terms)
-using Anthropic Claude Haiku with forced tool-use for structured output.
+Turns a plain-language buyer brief into a validated shared_models.RFx using
+Anthropic Claude Haiku with forced tool-use for structured output.
 
-Keeps LLM calls local to this module so Sonnet callers in core/llm.py stay
-untouched. Importable without starting FastAPI.
+Public API
+----------
+- draft_rfx(brief, **kwargs) -> RFx
+- regenerate_line_items(rfx, brief=None, **kwargs) -> RFx
+- apply_rfx_edits(rfx, **edits) -> RFx
+- nominal_weight_g(length_mm, width_mm, height_mm, gsm) -> float
+
+Manual-edit overlays (title/scope/terms/currency/vendors) always win over
+model output when the caller supplies them. regenerate_line_items preserves
+existing rfx_id/title/scope/terms/currency by discarding those fields from
+the model response (one shared emit_rfx tool schema).
 """
 from __future__ import annotations
 
@@ -21,8 +29,8 @@ from shared_models import LineItem, QuestionnaireItem, RFx, Vendor
 DEFAULT_HAIKU_MODEL = "claude-3-haiku-20240307"
 TOOL_NAME = "emit_rfx"
 
-# Realistic India corrugated shortlist — used only when the model omits vendors
-# or returns a list that cannot be coerced to Vendor. Always ends at length 5.
+# Realistic India corrugated shortlist — pad/seed when the model omits vendors
+# or returns a list that cannot be coerced. Always ends at length 5.
 _SEED_VENDORS: list[Vendor] = [
     Vendor(vendor_id="V1", name="Sri Balaji Packaging Pvt Ltd", email="quotes@sribalaji-packaging.in"),
     Vendor(vendor_id="V2", name="Kraftline Corrugators", email="rfq@kraftline.co.in"),
@@ -81,12 +89,16 @@ class _DraftPayload(BaseModel):
     """Structured RFx draft emitted by the model via forced tool use."""
 
     title: str
-    scope: str = Field(description="Background, what is sourced, volumes, quality, submission instructions")
+    scope: str = Field(
+        description="Background, what is sourced, volumes, quality, submission instructions"
+    )
     terms: str = Field(description="Commercial terms as a single prose block")
     currency: str = "INR"
     line_items: list[_DraftLine] = Field(description="Exactly 30 corrugated line items")
     questionnaire: list[_DraftQuestion] = Field(description="8–12 questions; 3–4 knockout")
-    vendors: list[_DraftVendor] = Field(default_factory=list, description="Exactly 5 target vendors")
+    vendors: list[_DraftVendor] = Field(
+        default_factory=list, description="Exactly 5 target vendors"
+    )
 
 
 class RFxDraftError(RuntimeError):
@@ -137,13 +149,20 @@ def _tool_def() -> dict[str, Any]:
     }
 
 
-def _user_content(brief: str, retry_hint: str | None = None) -> str:
+def _user_content(
+    brief: str,
+    *,
+    retry_hint: str | None = None,
+    context_note: str | None = None,
+) -> str:
     text = (
         "Buyer brief (plain language):\n\n"
         f"{brief.strip()}\n\n"
         "Draft the complete RFx now via emit_rfx. Remember: exactly 30 line items, "
         "8–12 questionnaire items with 3–4 knockout, and exactly 5 vendors."
     )
+    if context_note:
+        text += f"\n\n{context_note}"
     if retry_hint:
         text += f"\n\n{retry_hint}"
     return text
@@ -154,13 +173,25 @@ def _call_haiku(
     client: Any,
     brief: str,
     retry_hint: str | None = None,
+    context_note: str | None = None,
     max_tokens: int = 16000,
 ) -> _DraftPayload:
-    """One forced tool-use Messages API call; validate tool input as _DraftPayload."""
-    messages = [{"role": "user", "content": _user_content(brief, retry_hint)}]
+    """One forced tool-use Messages API call; validate tool input as _DraftPayload.
+
+    Internal schema-validation retry (up to 2 attempts) is separate from the
+    outer line-count retry in draft_rfx / regenerate_line_items.
+    """
+    messages = [
+        {
+            "role": "user",
+            "content": _user_content(
+                brief, retry_hint=retry_hint, context_note=context_note
+            ),
+        }
+    ]
     last_error: str | None = None
 
-    for attempt in range(2):
+    for _attempt in range(2):
         resp = client.messages.create(
             model=_haiku_model(),
             max_tokens=max_tokens,
@@ -169,9 +200,15 @@ def _call_haiku(
             tool_choice={"type": "tool", "name": TOOL_NAME},
             messages=messages,
         )
-        tool_use = next((b for b in resp.content if getattr(b, "type", None) == "tool_use"), None)
+        tool_use = next(
+            (b for b in resp.content if getattr(b, "type", None) == "tool_use"),
+            None,
+        )
         if tool_use is None:
-            last_error = f"model returned no tool call (stop_reason={getattr(resp, 'stop_reason', None)})"
+            last_error = (
+                f"model returned no tool call "
+                f"(stop_reason={getattr(resp, 'stop_reason', None)})"
+            )
         else:
             try:
                 return _DraftPayload.model_validate(tool_use.input)
@@ -200,7 +237,9 @@ def _call_haiku(
         else:
             messages.append({"role": "user", "content": feedback})
 
-    raise RFxDraftError(f"Structured RFx draft failed schema validation after retry: {last_error}")
+    raise RFxDraftError(
+        f"Structured RFx draft failed schema validation after retry: {last_error}"
+    )
 
 
 def _new_rfx_id(brief: str) -> str:
@@ -208,15 +247,19 @@ def _new_rfx_id(brief: str) -> str:
     return f"RFX-{date.today().strftime('%Y%m%d')}-{digest}"
 
 
-def _coerce_vendors(raw: list[_DraftVendor] | list[Vendor]) -> list[Vendor]:
-    """Validate model vendors; fall back / pad to exactly 5 seed vendors."""
+def _coerce_vendors(raw: Any) -> list[Vendor]:
+    """Validate vendors from model/caller; fall back / pad to exactly 5 seeds."""
     vendors: list[Vendor] = []
     for v in raw or []:
         try:
             if isinstance(v, Vendor):
                 vendors.append(v)
             else:
-                vendors.append(Vendor.model_validate(v.model_dump() if hasattr(v, "model_dump") else v))
+                vendors.append(
+                    Vendor.model_validate(
+                        v.model_dump() if hasattr(v, "model_dump") else v
+                    )
+                )
         except (ValidationError, TypeError, ValueError):
             continue
 
@@ -230,6 +273,35 @@ def _coerce_vendors(raw: list[_DraftVendor] | list[Vendor]) -> list[Vendor]:
                 seen.add(seed.vendor_id)
 
     return vendors[:5]
+
+
+def _coerce_line_items(raw: list[Any]) -> list[LineItem]:
+    lines: list[LineItem] = []
+    for i, li in enumerate(raw or [], start=1):
+        if isinstance(li, LineItem):
+            item = li
+        else:
+            data = li.model_dump() if hasattr(li, "model_dump") else dict(li)
+            data.setdefault("line_id", f"L{i:02d}")
+            data.setdefault("uom", "piece")
+            data.setdefault("specs", {})
+            item = LineItem.model_validate(data)
+        if not item.line_id:
+            item = item.model_copy(update={"line_id": f"L{i:02d}"})
+        lines.append(_enrich_specs(item))
+    return lines
+
+
+def _coerce_questionnaire(raw: list[Any]) -> list[QuestionnaireItem]:
+    questions: list[QuestionnaireItem] = []
+    for i, q in enumerate(raw or [], start=1):
+        if isinstance(q, QuestionnaireItem):
+            questions.append(q)
+        else:
+            data = q.model_dump() if hasattr(q, "model_dump") else dict(q)
+            data.setdefault("id", f"Q{i}")
+            questions.append(QuestionnaireItem.model_validate(data))
+    return questions
 
 
 def _enrich_specs(line: LineItem) -> LineItem:
@@ -247,33 +319,42 @@ def _enrich_specs(line: LineItem) -> LineItem:
     return line.model_copy(update={"specs": specs})
 
 
+def _ensure_line_count(payload: _DraftPayload, *, client: Any, brief: str, max_tokens: int) -> _DraftPayload:
+    """Retry once if line count is not exactly 30."""
+    if len(payload.line_items) == 30:
+        return payload
+    hint = (
+        f"Your previous draft had {len(payload.line_items)} line items. "
+        "Produce exactly 30 line items, keeping the same style and following the brief."
+    )
+    payload = _call_haiku(
+        client=client, brief=brief, retry_hint=hint, max_tokens=max_tokens
+    )
+    if len(payload.line_items) != 30:
+        raise RFxDraftError(
+            f"RFx draft still has {len(payload.line_items)} line items after one retry; "
+            "exactly 30 are required."
+        )
+    return payload
+
+
+def _require_knockouts(questionnaire: list[Any], *, context: str = "RFx draft") -> None:
+    if not questionnaire:
+        raise RFxDraftError(f"{context} questionnaire is empty.")
+    knockouts = sum(
+        1
+        for q in questionnaire
+        if (q.knockout if hasattr(q, "knockout") else bool(q.get("knockout")))
+    )
+    if knockouts < 1:
+        raise RFxDraftError(
+            f"{context} questionnaire must include at least one knockout question."
+        )
+
+
 def _to_rfx(payload: _DraftPayload, brief: str, rfx_id: Optional[str] = None) -> RFx:
-    lines = [
-        _enrich_specs(
-            LineItem(
-                line_id=li.line_id or f"L{i:02d}",
-                description=li.description,
-                qty=float(li.qty),
-                uom=li.uom or "piece",
-                specs=dict(li.specs or {}),
-            )
-        )
-        for i, li in enumerate(payload.line_items, start=1)
-    ]
-    # Enforce sequential ids if the model drifted
-    for i, li in enumerate(lines, start=1):
-        if not li.line_id:
-            lines[i - 1] = li.model_copy(update={"line_id": f"L{i:02d}"})
-
-    questions = [
-        QuestionnaireItem(
-            id=q.id or f"Q{i}",
-            question=q.question,
-            knockout=bool(q.knockout),
-        )
-        for i, q in enumerate(payload.questionnaire, start=1)
-    ]
-
+    lines = _coerce_line_items(payload.line_items)
+    questions = _coerce_questionnaire(payload.questionnaire)
     return RFx(
         rfx_id=rfx_id or _new_rfx_id(brief),
         title=payload.title.strip() or "Corrugated packaging RFx",
@@ -286,16 +367,57 @@ def _to_rfx(payload: _DraftPayload, brief: str, rfx_id: Optional[str] = None) ->
     )
 
 
-def draft_rfx(brief: str, **kwargs) -> RFx:
+def _overlay_edits(rfx: RFx, edits: dict[str, Any]) -> RFx:
+    """Apply caller-supplied field overlays; empty dict is a no-op."""
+    update: dict[str, Any] = {}
+    if "title" in edits and edits["title"] is not None:
+        update["title"] = str(edits["title"]).strip()
+    if "scope" in edits and edits["scope"] is not None:
+        update["scope"] = str(edits["scope"]).strip()
+    if "terms" in edits and edits["terms"] is not None:
+        update["terms"] = str(edits["terms"]).strip()
+    if "currency" in edits and edits["currency"] is not None:
+        cur = str(edits["currency"]).strip() or "INR"
+        update["currency"] = cur
+    if "vendors" in edits and edits["vendors"] is not None:
+        update["vendors"] = _coerce_vendors(edits["vendors"])
+    if "line_items" in edits and edits["line_items"] is not None:
+        update["line_items"] = _coerce_line_items(edits["line_items"])
+    if "questionnaire" in edits and edits["questionnaire"] is not None:
+        update["questionnaire"] = _coerce_questionnaire(edits["questionnaire"])
+    if "rfx_id" in edits and edits["rfx_id"] is not None:
+        update["rfx_id"] = str(edits["rfx_id"]).strip()
+    if not update:
+        return rfx
+    return rfx.model_copy(update=update)
+
+
+def apply_rfx_edits(rfx: RFx, **edits: Any) -> RFx:
+    """Pure helper: overlay title/scope/terms/currency/vendors (and optionally
+    replace line_items/questionnaire) without calling the LLM.
+
+    Validates the result as an RFx model. Unknown kwargs are ignored.
+    """
+    if not isinstance(rfx, RFx):
+        rfx = RFx.model_validate(rfx)
+    updated = _overlay_edits(rfx, edits)
+    # Re-validate through the model constructor for a clean copy
+    return RFx.model_validate(updated.model_dump())
+
+
+def draft_rfx(brief: str, **kwargs: Any) -> RFx:
     """Draft a structured RFx from a free-text buyer brief.
 
     Parameters
     ----------
     brief:
-        Plain-language buyer brief.
+        Plain-language buyer brief (min ~10 characters).
     **kwargs:
-        Optional: ``client`` (Anthropic-compatible client, useful in tests),
-        ``rfx_id`` (override id), ``max_tokens``.
+        ``client`` — Anthropic-compatible client (inject mock in tests).
+        ``rfx_id`` — override generated id.
+        ``max_tokens`` — Messages API max_tokens (default 16000).
+        ``title``, ``scope``, ``terms``, ``currency``, ``vendors`` —
+        manual edits overlaid after the model draft so user edits win.
 
     Returns
     -------
@@ -311,38 +433,116 @@ def draft_rfx(brief: str, **kwargs) -> RFx:
     rfx_id = kwargs.get("rfx_id")
 
     payload = _call_haiku(client=client, brief=brief, max_tokens=max_tokens)
-
-    if len(payload.line_items) != 30:
-        hint = (
-            f"Your previous draft had {len(payload.line_items)} line items. "
-            "Produce exactly 30 line items, keeping the same style and following the brief."
-        )
-        payload = _call_haiku(
-            client=client, brief=brief, retry_hint=hint, max_tokens=max_tokens
-        )
-        if len(payload.line_items) != 30:
-            raise RFxDraftError(
-                f"RFx draft still has {len(payload.line_items)} line items after one retry; "
-                "exactly 30 are required."
-            )
+    payload = _ensure_line_count(
+        payload, client=client, brief=brief, max_tokens=max_tokens
+    )
 
     if not (8 <= len(payload.questionnaire) <= 12):
-        # Soft: keep model output if close; hard-fail only on empty
         if not payload.questionnaire:
             raise RFxDraftError("RFx draft questionnaire is empty.")
 
-    knockouts = sum(1 for q in payload.questionnaire if q.knockout)
-    if knockouts < 1:
-        raise RFxDraftError(
-            "RFx draft questionnaire must include at least one knockout question."
+    _require_knockouts(payload.questionnaire)
+
+    rfx = _to_rfx(payload, brief, rfx_id=rfx_id)
+
+    # Manual edits win over model output for the overlay fields.
+    overlay_keys = ("title", "scope", "terms", "currency", "vendors")
+    overlays = {k: kwargs[k] for k in overlay_keys if k in kwargs}
+    if overlays:
+        rfx = _overlay_edits(rfx, overlays)
+
+    return RFx.model_validate(rfx.model_dump())
+
+
+def regenerate_line_items(
+    rfx: RFx,
+    brief: str | None = None,
+    **kwargs: Any,
+) -> RFx:
+    """Regenerate ONLY line items (exactly 30) from brief + existing RFx context.
+
+    Preserved fields (always win over model output)
+    -----------------------------------------------
+    ``rfx_id``, ``title``, ``scope``, ``terms``, ``currency`` are taken from
+    the existing ``rfx`` and never overwritten by the model. The shared
+    ``emit_rfx`` tool still returns a full draft; those fields are discarded.
+
+    Optional refresh flags
+    ----------------------
+    ``refresh_questionnaire`` (default False) — replace questionnaire from model;
+    requires ≥1 knockout when True. Otherwise existing questionnaire is kept.
+    ``refresh_vendors`` (default False) — replace vendors from model (seed/pad
+    to 5). If False and existing vendors are empty, seed 5.
+
+    Other kwargs: ``client=``, ``max_tokens=``.
+    """
+    if not isinstance(rfx, RFx):
+        rfx = RFx.model_validate(rfx)
+
+    brief_text = (brief or "").strip()
+    if not brief_text:
+        # Synthesize a regeneration brief from existing RFx context
+        brief_text = (
+            f"Regenerate line items for RFx '{rfx.title}'.\n"
+            f"Scope:\n{rfx.scope}\n"
+            f"Terms:\n{rfx.terms}\n"
+            f"Currency: {rfx.currency}"
         )
+    if len(brief_text) < 10:
+        raise ValueError("Brief is too short — describe category, volume, and site.")
 
-    return _to_rfx(payload, brief, rfx_id=rfx_id)
+    client = _make_client(kwargs.get("client"))
+    max_tokens = int(kwargs.get("max_tokens") or 16000)
+    refresh_questionnaire = bool(kwargs.get("refresh_questionnaire", False))
+    refresh_vendors = bool(kwargs.get("refresh_vendors", False))
+
+    context_note = (
+        "REGENERATION MODE: Produce a fresh set of exactly 30 line items that fit "
+        "this existing RFx. Keep title/scope/terms/currency consistent with the "
+        "context below (the caller will preserve the existing values regardless).\n"
+        f"Existing title: {rfx.title}\n"
+        f"Existing scope:\n{rfx.scope}\n"
+        f"Existing terms:\n{rfx.terms}\n"
+        f"Currency: {rfx.currency}\n"
+        f"rfx_id: {rfx.rfx_id}"
+    )
+
+    payload = _call_haiku(
+        client=client,
+        brief=brief_text,
+        context_note=context_note,
+        max_tokens=max_tokens,
+    )
+    payload = _ensure_line_count(
+        payload, client=client, brief=brief_text, max_tokens=max_tokens
+    )
+
+    new_lines = _coerce_line_items(payload.line_items)
+
+    if refresh_questionnaire:
+        new_questions = _coerce_questionnaire(payload.questionnaire)
+        _require_knockouts(new_questions, context="Regenerated")
+    else:
+        new_questions = list(rfx.questionnaire)
+
+    if refresh_vendors:
+        new_vendors = _coerce_vendors(payload.vendors)
+    else:
+        new_vendors = list(rfx.vendors) if rfx.vendors else _coerce_vendors([])
+
+    return rfx.model_copy(
+        update={
+            "line_items": new_lines,
+            "questionnaire": new_questions,
+            "vendors": new_vendors,
+        }
+    )
 
 
-# Quiet unused-import guard for public re-exports used by tests / callers
 __all__ = [
     "draft_rfx",
+    "regenerate_line_items",
+    "apply_rfx_edits",
     "nominal_weight_g",
     "RFxDraftError",
     "DEFAULT_HAIKU_MODEL",

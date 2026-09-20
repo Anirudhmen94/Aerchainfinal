@@ -1,99 +1,64 @@
-# Aerchainfinal — RFx Crew (5 agents)
+# Aerchainfinal — RFx Crew (live product wizard)
 
-Evidence-minded sourcing prototype for corrugated packaging. A buyer describes a
-requirement; a **crew of five agents** drafts the RFx, dispatches stub vendor emails,
-parses whatever formats come back, normalises currency/UOM into one comparison matrix,
-and answers natural-language questions toward an award.
+Evidence-minded sourcing prototype for corrugated packaging. A buyer walks a
+**sequential wizard**: Draft → Send → Inbox → Compare → Ask → Award. Five agents
+power each stage; the orchestrator persists state under `data/store/`.
 
 Repository: https://github.com/Anirudhmen94/Aerchainfinal
 
-This is a **new shareable deployment** of the crew architecture (entrypoint
-`app_crew:app`). It is **not** the older kill-the-quote-spreadsheet Vercel project.
+Entrypoint: `app_crew:app` (not the older kill-the-quote-spreadsheet project).
 
-## 5-agent architecture
+## Wizard steps
 
-| # | Agent | Module | Responsibility |
-|---|---|---|---|
-| 1 | **RFx Drafter** | `agents/rfx_drafter.py` | Brief → structured `RFx` (scope, ~30 lines, terms, questionnaire, vendors) |
-| 2 | **Vendor Dispatcher** | `agents/vendor_dispatcher.py` | Cover emails written to `data/outbox/` (SMTP stubbed) |
-| 3 | **Document Parser** | `agents/document_parser.py` | Vendor files → `ExtractedQuote` (JSON/CSV deterministic; text/PDF/image via Haiku) |
-| 4 | **Normalizer** | `agents/normalizer.py` | Map to RFx lines; USD→INR; UOM → INR/piece; flag gaps |
-| 5 | **Analyst** | `agents/analyst.py` | NL questions over `ComparisonTable` (deterministic helpers + optional Claude) |
+| Step | What the buyer does | Agent |
+|---|---|---|
+| **Draft** | Edit brief + title/scope/terms → **Generate line items** (30 lines + questionnaire + vendors) → tweak lines → Continue | RFx Drafter |
+| **Send** | Review cover email previews → **Send to vendors** → outbox confirmation | Vendor Dispatcher (SMTP stubbed → `data/outbox/`) |
+| **Inbox** | Seed/upload stub replies → **Parse** / **Parse all** → quotations + questionnaire answers | Document Parser |
+| **Compare** | Side-by-side INR matrix, coverage, knockout pass/fail badges; only qualified vendors are award-eligible | Normalizer + qualification |
+| **Ask** | Persistent live chat with the Analyst (history kept) | Analyst |
+| **Award** | Per-line dropdown (qualified vendors with a price) → save → summary / print | Analyst `validate_award` / `suggest_split_award` |
 
-**Orchestrator:** `orchestrator/pipeline.py` runs Drafter → Dispatcher → Parser →
-Normalizer in sequence and keeps an Analyst chat session. Shared contracts live in
-`shared_models.py`.
-
-```
-Buyer brief
-    │
-    ▼
-┌─────────────┐   ┌──────────────┐   ┌──────────────┐   ┌────────────┐   ┌─────────┐
-│ RFx Drafter │──▶│  Dispatcher  │──▶│ Doc Parser   │──▶│ Normalizer │──▶│ Analyst │
-└─────────────┘   └──────────────┘   └──────────────┘   └────────────┘   └─────────┘
-                         │                  ▲
-                         ▼                  │
-                   data/outbox/      data/vendor_responses/
-```
-
-The legacy `core/` + `app.py` monolith remains in the tree for reference; the crew
-path does not depend on it.
+Next step unlocks only when the previous stage is complete (Back always allowed).
+An optional **auto-run demo (e2e)** link on the home page still exists for one-shot demos.
 
 ## Run locally
-
-Python 3.11+ recommended.
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # set ANTHROPIC_API_KEY for LLM drafting / unstructured parse
+cp .env.example .env   # set ANTHROPIC_API_KEY
 uvicorn app_crew:app --port 8518 --reload
 ```
 
-Open http://127.0.0.1:8518
+Open http://127.0.0.1:8518 — start a draft and walk the wizard.
 
-UI flow:
+Without `ANTHROPIC_API_KEY`, structured JSON/CSV parse + normalize + offline analyst
+still work once an RFx exists; drafting and unstructured parse need the key.
 
-1. Enter brief → **Draft RFx**
-2. **Dispatch** stub emails
-3. **Ingest** sample vendor files (or upload)
-4. **Normalize** into the comparison matrix
-5. **Ask** NL questions (“cheapest per line”, “vendor totals”, “where are the gaps?”)
+## Deploy
 
-Without `ANTHROPIC_API_KEY`, JSON/CSV sample ingest + normalize + offline analyst still
-work once an RFx exists; drafting and unstructured parse need the key.
-
-## Deploy (new Vercel URL)
-
-`vercel.json` targets **`app_crew.py`** (not the old `app.py` kill-the-quote project).
-
-1. Import https://github.com/Anirudhmen94/Aerchainfinal into a **new** Vercel project
-   (do not reuse kill-the-quote-spreadsheet).
-2. Framework: Other / Python. Entrypoint `app_crew.py` → variable `app`.
-3. Env: `ANTHROPIC_API_KEY`, optional `ANTHROPIC_HAIKU_MODEL` / `ANTHROPIC_SONNET_MODEL`.
-4. Deploy. Verify `https://<new-app>.vercel.app/healthz` returns `"app": "rfx-crew"`.
-
-See `DEPLOY.md`. Function timeout is 300s.
+`vercel.json` targets **`app_crew.py`**. Import this repo into a **new** Vercel
+project (do not reuse kill-the-quote-spreadsheet). Set `ANTHROPIC_API_KEY`.
+Verify `/healthz` returns `"app": "rfx-crew"`. See `DEPLOY.md`.
 
 ## Layout
 
 ```
-agents/                 Five crew agents
-orchestrator/           Sequential pipeline + session snapshot
-shared_models.py        Pydantic contracts
-app_crew.py             FastAPI + Jinja/HTMX buyer UI
-templates/crew/         Crew UI
+agents/                 Five crew agents + qualification.py
+orchestrator/           Wizard-aware pipeline + persistence
+shared_models.py        Pydantic contracts (incl. awards / inbox / knockouts)
+app_crew.py             FastAPI wizard routes
+templates/crew/         Wizard UI (wizard.html)
 data/vendor_responses/  Sample multi-format vendor replies
+data/inbox/             Stub inbound mail (per RFx)
 data/outbox/            Stub dispatch emails
-data/store/             Pipeline session snapshots (gitignored)
-DECISIONS.md            Product/architecture choices for THIS crew
-DEMO_SCRIPT.md          Walkthrough for THIS crew
-vercel.json             New deploy config → app_crew.py
+data/store/             Session snapshots (gitignored)
 ```
 
 ## Deliberately not built
 
-Real SMTP/IMAP, vendor portal, ERP hand-off, multi-user auth, and hardcoded demo
-answers. Arithmetic and ranking stay in code; the Analyst explains over computed tables.
+Real SMTP/IMAP, vendor portal, ERP hand-off, multi-user auth. Arithmetic and
+ranking stay in code; the Analyst explains over computed tables.
 
 See `DECISIONS.md` and `DEMO_SCRIPT.md`.

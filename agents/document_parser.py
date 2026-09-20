@@ -117,9 +117,21 @@ def _rfx_context(rfx: Any) -> dict[str, Any]:
     slim_q = []
     for q in qs:
         if isinstance(q, dict):
-            slim_q.append({"id": q.get("id", ""), "question": q.get("question") or q.get("text") or ""})
+            slim_q.append(
+                {
+                    "id": q.get("id", ""),
+                    "question": q.get("question") or q.get("text") or "",
+                    "knockout": bool(q.get("knockout", False)),
+                }
+            )
         else:
-            slim_q.append({"id": getattr(q, "id", ""), "question": getattr(q, "question", "")})
+            slim_q.append(
+                {
+                    "id": getattr(q, "id", ""),
+                    "question": getattr(q, "question", ""),
+                    "knockout": bool(getattr(q, "knockout", False)),
+                }
+            )
     return {
         "rfx_id": str(data.get("rfx_id") or data.get("id") or ""),
         "currency": str(data.get("currency") or "INR"),
@@ -186,19 +198,163 @@ def _normalize_line(row: dict[str, Any], default_currency: str = "INR") -> dict[
 
 
 def _normalize_answers(raw: Any) -> list[dict[str, Any]]:
+    """Normalize raw questionnaire payload into {id,question,answer,answered} dicts."""
     answers: list[dict[str, Any]] = []
     if isinstance(raw, dict):
         for q, a in raw.items():
-            answers.append({"question": str(q), "answer": str(a)})
+            ans = "" if a is None else str(a)
+            answers.append(
+                {
+                    "id": "",
+                    "question": str(q),
+                    "answer": ans,
+                    "answered": bool(str(ans).strip()),
+                }
+            )
     elif isinstance(raw, list):
         for item in raw:
             if isinstance(item, dict):
-                q = item.get("question") or item.get("q") or item.get("id") or ""
+                qid = str(item.get("id") or "")
+                q = item.get("question") or item.get("q") or item.get("text") or ""
+                if not q and qid and not item.get("answer") and not item.get("a"):
+                    # id-only key misuse — treat id as question label
+                    q = qid
+                    qid = qid if re.match(r"^Q\d+", str(qid), re.I) else ""
                 a = item.get("answer") or item.get("a") or item.get("response") or ""
-                answers.append({"question": str(q), "answer": str(a)})
+                ans = "" if a is None else str(a)
+                # If id looks like Qn and question empty, keep id
+                if not qid and re.match(r"^Q\d+", str(item.get("id") or ""), re.I):
+                    qid = str(item.get("id"))
+                answers.append(
+                    {
+                        "id": qid,
+                        "question": str(q),
+                        "answer": ans,
+                        "answered": bool(ans.strip()),
+                    }
+                )
             else:
-                answers.append({"question": "", "answer": str(item)})
+                answers.append({"id": "", "question": "", "answer": str(item), "answered": bool(str(item).strip())})
     return answers
+
+
+def _norm_qtext(s: str) -> str:
+    s = (s or "").lower().strip()
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def _quality_gate_answers(
+    answers: list[dict[str, Any]],
+    rfx_ctx: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Map extracted answers onto RFx questionnaire ids for knockout gating.
+
+    Never invents answers. Unanswered knockouts (when RFx provided) appear with
+    answered=False and empty answer.
+    """
+    rfx_ctx = rfx_ctx or {}
+    rfx_qs = list(rfx_ctx.get("questionnaire") or [])
+
+    def _tokens(s: str) -> set[str]:
+        # Drop ultra-common procurement filler words to avoid false matches
+        stop = {
+            "the", "and", "for", "you", "your", "are", "is", "this", "that",
+            "with", "from", "have", "will", "can", "into", "within", "over",
+            "last", "days", "day", "per", "any", "all", "please", "provide",
+        }
+        return {t for t in _norm_qtext(s).split() if len(t) > 2 and t not in stop}
+
+    def _match_rfx(qid: str, qtext: str, used: set[str]):
+        if not rfx_qs:
+            return None
+        qn = _norm_qtext(qtext)
+        # 1) explicit id
+        if qid:
+            for rq in rfx_qs:
+                rq_id = str(rq.get("id") or "")
+                if rq_id and rq_id.upper() == qid.upper() and rq_id.upper() not in used:
+                    return rq
+        # 2) strong text containment / equality
+        if qn:
+            for rq in rfx_qs:
+                rq_id = str(rq.get("id") or "")
+                if rq_id.upper() in used:
+                    continue
+                rn = _norm_qtext(str(rq.get("question") or ""))
+                if not rn:
+                    continue
+                if qn == rn or qn in rn or rn in qn:
+                    return rq
+        # 3) conservative token overlap (need >=3 shared content tokens AND >=50% of smaller side)
+        q_tokens = _tokens(qtext)
+        if len(q_tokens) >= 3:
+            best = None
+            best_score = 0
+            for rq in rfx_qs:
+                rq_id = str(rq.get("id") or "")
+                if rq_id.upper() in used:
+                    continue
+                r_tokens = _tokens(str(rq.get("question") or ""))
+                if len(r_tokens) < 3:
+                    continue
+                score = len(q_tokens & r_tokens)
+                smaller = min(len(q_tokens), len(r_tokens))
+                if score >= 3 and score >= ceil_half(smaller) and score > best_score:
+                    best_score = score
+                    best = rq
+            return best
+        return None
+
+    def ceil_half(n: int) -> int:
+        return (n + 1) // 2
+
+    shaped: list[dict[str, Any]] = []
+    used_ids: set[str] = set()
+    for raw in answers:
+        if not isinstance(raw, dict):
+            continue
+        qid = str(raw.get("id") or "")
+        qtext = str(raw.get("question") or "")
+        ans = "" if raw.get("answer") is None else str(raw.get("answer"))
+        best = _match_rfx(qid, qtext, used_ids)
+        if best is not None:
+            qid = str(best.get("id") or qid)
+            qtext = str(best.get("question") or qtext)
+            if qid:
+                used_ids.add(qid.upper())
+        shaped.append(
+            {
+                "id": qid,
+                "question": qtext,
+                "answer": ans,
+                "answered": bool(ans.strip()),
+            }
+        )
+
+    # Ensure knockout questions appear even when vendor omitted them (empty, not invented)
+    if rfx_qs:
+        seen_ids = {str(s.get("id") or "").upper() for s in shaped if s.get("id")}
+        seen_q = {_norm_qtext(str(s.get("question") or "")) for s in shaped}
+        for rq in rfx_qs:
+            if not bool(rq.get("knockout")):
+                continue
+            rq_id = str(rq.get("id") or "")
+            rq_text = str(rq.get("question") or "")
+            if rq_id and rq_id.upper() in seen_ids:
+                continue
+            if rq_text and _norm_qtext(rq_text) in seen_q:
+                continue
+            shaped.append(
+                {
+                    "id": rq_id,
+                    "question": rq_text,
+                    "answer": "",
+                    "answered": False,
+                }
+            )
+    return shaped
+
 
 
 def _meta_evidence(
@@ -655,6 +811,7 @@ def parse_response(
     """Parse one vendor reply into ExtractedQuote.
 
     JSON/CSV are deterministic. Email/Word/PDF/image/text use Claude Haiku.
+    Questionnaire answers are shaped for knockout quality gates when RFx is given.
     """
     p = Path(path)
     if not p.exists():
@@ -667,10 +824,14 @@ def parse_response(
     rfx_ctx = _rfx_context(rfx)
 
     if suffix == ".json":
-        return _parse_json(p, vid)
-    if suffix == ".csv":
-        return _parse_csv(p, vid)
-    return _parse_unstructured(p, vid, rfx_ctx)
+        quote = _parse_json(p, vid)
+    elif suffix == ".csv":
+        quote = _parse_csv(p, vid)
+    else:
+        quote = _parse_unstructured(p, vid, rfx_ctx)
+
+    gated = _quality_gate_answers(list(quote.questionnaire_answers or []), rfx_ctx)
+    return quote.model_copy(update={"questionnaire_answers": gated})
 
 
 def parse_vendor_file(
@@ -727,3 +888,158 @@ class DocumentParserAgent:
 
     def parse_dir(self, directory: str) -> list[dict]:
         return parse_vendor_dir(directory)
+
+    def seed_inbox(self, inbox_dir=None, vendor_dir=None):
+        return seed_inbox(inbox_dir=inbox_dir, vendor_dir=vendor_dir)
+
+    def list_inbox(self, inbox_dir=None):
+        return list_inbox(inbox_dir=inbox_dir)
+
+    def parse_one(self, path, vendor_id: str = "") -> ExtractedQuote:
+        return parse_one(path, vendor_id=vendor_id, rfx=self.rfx)
+
+    def parse_all(self, directory=None, *, vendor_ids=None, skip_llm: bool = False):
+        return parse_all(directory, rfx=self.rfx, vendor_ids=vendor_ids, skip_llm=skip_llm)
+
+
+# ---------------------------------------------------------------------------
+# Inbox helpers (wizard stub inbound mail)
+# ---------------------------------------------------------------------------
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_VENDOR_DIR = REPO_ROOT / "data" / "vendor_responses"
+DEFAULT_INBOX_DIR = REPO_ROOT / "data" / "inbox"
+
+# Primary demo samples only (ignore leftover V1_sri_* stubs).
+_PRIMARY_INBOX_SEED: list[tuple[str, str, str]] = [
+    # (source_name, dest_name, kind)  kind: structured | email
+    ("V01_PackForge_response.json", "inbound_V01_PackForge.json", "structured"),
+    ("V02_CartonWorks_response.csv", "inbound_V02_CartonWorks.csv", "structured"),
+    ("V03_PacificBoard_email.txt", "inbound_V03_PacificBoard.eml", "email"),
+    ("V04_QuickCorr_prose.txt", "inbound_V04_QuickCorr.txt", "email"),
+    ("V05_NestPack_messy.txt", "inbound_V05_NestPack.txt", "email"),
+]
+
+_EMAIL_META = {
+    "V01": ("quotes@packforge.in", "PackForge India"),
+    "V02": ("rfq@cartonworks.in", "CartonWorks LLP"),
+    "V03": ("tenders@pacificboard.com", "PacificBoard Inc"),
+    "V04": ("sales@quickcorr.in", "QuickCorr Pvt Ltd"),
+    "V05": ("bid@nestpack.in", "NestPack Industries"),
+}
+
+
+def _vendor_id_from_name(name: str) -> str:
+    m = re.search(r"(V\d+)", name, re.I)
+    return m.group(1).upper() if m else ""
+
+
+def _wrap_as_email(body: str, *, vendor_id: str, source_name: str) -> str:
+    """Ensure From/To/Subject/Date headers for stub inbound mail."""
+    if re.match(r"(?i)^from:\s*", body.lstrip()):
+        # Already looks like an email (e.g. V03 sample)
+        return body if body.endswith("\n") else body + "\n"
+    from_addr, display = _EMAIL_META.get(vendor_id, (f"quotes@{vendor_id.lower()}.example", vendor_id))
+    headers = (
+        f"From: {display} <{from_addr}>\n"
+        f"To: procurement@buyer.example\n"
+        f"Subject: Re: RFX-CORR-2026-001 — {display} quotation\n"
+        f"Date: Mon, 15 Sep 2026 11:00:00 +0530\n"
+        f"X-Stub-Source: data/vendor_responses/{source_name}\n"
+        f"\n"
+    )
+    return headers + body
+
+
+def seed_inbox(
+    inbox_dir: str | Path | None = None,
+    vendor_dir: str | Path | None = None,
+) -> list[Path]:
+    """Create/refresh stub inbound files from primary vendor_responses. Idempotent."""
+    inbox = Path(inbox_dir) if inbox_dir else DEFAULT_INBOX_DIR
+    vendors = Path(vendor_dir) if vendor_dir else DEFAULT_VENDOR_DIR
+    inbox.mkdir(parents=True, exist_ok=True)
+
+    written: list[Path] = []
+    for src_name, dest_name, kind in _PRIMARY_INBOX_SEED:
+        src = vendors / src_name
+        if not src.exists():
+            # Soft-skip missing samples so seed stays usable mid-refactor
+            continue
+        dest = inbox / dest_name
+        raw = src.read_text(encoding="utf-8", errors="replace")
+        vid = _vendor_id_from_name(src_name) or _vendor_id_from_name(dest_name)
+        if kind == "structured":
+            dest.write_text(raw, encoding="utf-8")
+        else:
+            dest.write_text(_wrap_as_email(raw, vendor_id=vid, source_name=src_name), encoding="utf-8")
+        written.append(dest)
+    return written
+
+
+def list_inbox(inbox_dir: str | Path | None = None) -> list[dict]:
+    """List stub inbound files: path, vendor_id, filename, format."""
+    inbox = Path(inbox_dir) if inbox_dir else DEFAULT_INBOX_DIR
+    if not inbox.is_dir():
+        return []
+    rows: list[dict] = []
+    for path in sorted(inbox.iterdir()):
+        if not path.is_file() or path.name.startswith("."):
+            continue
+        if path.suffix.lower() not in SUPPORTED and path.suffix.lower() not in {".md"}:
+            continue
+        rows.append(
+            {
+                "path": str(path),
+                "vendor_id": _vendor_id_from_name(path.name) or _guess_vendor_id(path),
+                "filename": path.name,
+                "format": path.suffix.lower().lstrip(".") or "unknown",
+            }
+        )
+    return rows
+
+
+def parse_one(path: Union[str, Path], vendor_id: str = "", rfx: Any = None) -> ExtractedQuote:
+    """Alias of parse_response for wizard/orchestrator call sites."""
+    return parse_response(path, vendor_id or "", rfx)
+
+
+def parse_all(
+    directory: str | Path | None = None,
+    rfx: Any = None,
+    *,
+    vendor_ids: list[str] | None = None,
+    skip_llm: bool = False,
+) -> list[ExtractedQuote]:
+    """Parse every supported file in directory (default data/inbox).
+
+    When skip_llm=True, only JSON/CSV (deterministic) files are parsed — useful
+    for fast smoke tests without Haiku calls.
+    """
+    d = Path(directory) if directory else DEFAULT_INBOX_DIR
+    if not d.is_dir():
+        raise NotADirectoryError(d)
+
+    allow = {v.upper() for v in vendor_ids} if vendor_ids else None
+    out: list[ExtractedQuote] = []
+    for path in sorted(d.iterdir()):
+        if not path.is_file() or path.name.startswith("."):
+            continue
+        suffix = path.suffix.lower()
+        if suffix not in SUPPORTED and suffix not in {".md"}:
+            continue
+        if skip_llm and suffix not in JSON_CSV_EXTS:
+            continue
+        vid = _guess_vendor_id(path)
+        if allow is not None and vid.upper() not in allow:
+            # also allow V01 vs V1 soft match
+            soft = re.sub(r"^V0+", "V", vid.upper())
+            allow_soft = {re.sub(r"^V0+", "V", a) for a in allow}
+            if vid.upper() not in allow and soft not in allow_soft:
+                continue
+        out.append(parse_response(path, vid, rfx))
+    return out
+
+
+# Alias expected by some __init__/UI imports
+DocumentParserAgent = DocumentParserAgent

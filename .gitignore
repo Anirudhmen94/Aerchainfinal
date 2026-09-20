@@ -12,3 +12,5 @@ data/uploads/
 *.egg-info/
 uploads/
 terminals/
+data/inbox/*
+!data/inbox/.gitkeep
