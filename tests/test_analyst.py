@@ -15,6 +15,7 @@ from agents.analyst import (
     compute_cheapest_per_qualified,
     compute_vendor_totals,
     normalize_comparison_state,
+    shortlist_vendors,
     suggest_split_award,
     validate_award,
     _safe_calculate,
@@ -393,3 +394,20 @@ def test_suggest_split_award_matches_cheapest_qualified():
     assert by_line["L1"]["extended_inr"] == 800.0
     assert by_line["L2"]["extended_inr"] == 1000.0
 
+
+
+def test_shortlist_vendors_coverage_and_pass():
+    cmp = _sample_comparison_dict()
+    rfx = _sample_rfx()
+    rows = shortlist_vendors(cmp, rfx=rfx)
+    by_id = {r["vendor_id"]: r for r in rows}
+    assert set(by_id) >= {"v1", "v2", "v3"}
+    assert by_id["v1"]["pass"] is True
+    assert by_id["v2"]["pass"] is True
+    assert by_id["v3"]["pass"] is False
+    assert by_id["v1"]["name"] == "Alpha"
+    # v1 usable on L1+L2 of 3 lines → 2/3
+    assert by_id["v1"]["coverage"] == round(2 / 3, 4)
+    # Qualified vendors should sort before failed ones
+    assert rows[0]["pass"] is True
+    assert rows[-1]["vendor_id"] == "v3" or rows[-1]["pass"] is False

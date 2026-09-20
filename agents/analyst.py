@@ -1073,6 +1073,68 @@ def suggest_split_award(
     )
 
 
+
+def shortlist_vendors(
+    comparison: ComparisonLike,
+    rfx: RFxLike = None,
+    qualifications: Any = None,
+) -> list[dict[str, Any]]:
+    """Award/Compare shortlist rows for the integrator UI.
+
+    Returns a list of ``{vendor_id, name, coverage, pass}`` sorted by
+    pass (qualified first), then coverage descending, then vendor_id.
+
+    - ``coverage``: usable priced lines / total distinct RFx lines (0.0–1.0).
+    - ``pass``: True when the vendor is in the qualified set (questionnaire gate).
+    """
+    st = normalize_comparison_state(comparison, rfx=rfx)
+    cells = st["cells"]
+    names = dict(st.get("vendor_names") or {})
+
+    # Resolve qualifications the same way validate_award callers expect
+    if qualifications is None:
+        qualified = set(st.get("qualified_vendors") or [])
+    elif isinstance(qualifications, dict):
+        qualified = {str(k) for k, v in qualifications.items() if v}
+    else:
+        qualified = {str(v) for v in qualifications}
+
+    all_lines = {str(c.get("line_id")) for c in cells if c.get("line_id") is not None}
+    total_lines = len(all_lines) or 1
+
+    vendor_ids = sorted({str(c.get("vendor_id")) for c in cells if c.get("vendor_id")})
+    # Also include named vendors that have no cells yet
+    for vid in names:
+        if vid not in vendor_ids:
+            vendor_ids.append(str(vid))
+    vendor_ids = sorted(set(vendor_ids))
+
+    usable_by_vendor: dict[str, set[str]] = defaultdict(set)
+    for raw in cells:
+        cell = _cell_as_dict(raw)
+        if not _usable(cell):
+            continue
+        vid = str(cell.get("vendor_id"))
+        usable_by_vendor[vid].add(str(cell.get("line_id")))
+
+    rows: list[dict[str, Any]] = []
+    for vid in vendor_ids:
+        usable = len(usable_by_vendor.get(vid, ()))
+        coverage = round(usable / total_lines, 4)
+        rows.append(
+            {
+                "vendor_id": vid,
+                "name": names.get(vid, vid),
+                "coverage": coverage,
+                "pass": vid in qualified,
+            }
+        )
+
+    rows.sort(key=lambda r: (not r["pass"], -float(r["coverage"]), r["vendor_id"]))
+    return rows
+
+
+
 # Stub-compatible module helpers (operate on ComparisonTable)
 def cheapest_per_line(table: ComparisonTable) -> list[dict[str, Any]]:
     st = normalize_comparison_state(table)

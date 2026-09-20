@@ -10,7 +10,7 @@ import re
 from typing import Any, Iterable
 
 from shared_models import ComparisonTable, ExtractedQuote, NormalizedCell
-from agents.qualification import award_eligible_vendors, qualify_vendors
+from agents.qualification import award_eligible_vendors, build_questionnaire_results, qualify_vendors, questionnaire_matrix
 
 
 USD_TO_INR = 83.50
@@ -341,20 +341,8 @@ def normalize(rfx, extractions: list[ExtractedQuote]) -> ComparisonTable:
         vendor_flags[qual.vendor_id] = list(dict.fromkeys(vf))
 
     award_eligible = [q.vendor_id for q in qualifications if q.award_eligible]
-    # Also fill legacy/wizard aliases expected by Compare UI + analyst.
-    from shared_models import QuestionnaireResult
-    q_results = {}
-    for qual in qualifications:
-        q_results[qual.vendor_id] = [
-            QuestionnaireResult(
-                question_id=kr.question_id,
-                question=kr.question,
-                knockout=True,
-                answer=kr.answer or "",
-                passed=kr.passed,
-            )
-            for kr in qual.knockout_results
-        ]
+    # Full question×vendor results (knockouts + non-knockouts) for Compare matrix.
+    q_results = build_questionnaire_results(rfx, extractions)
     vendor_names = {
         _text(_value(v, "vendor_id")): _text(_value(v, "name"))
         for v in (_value(rfx, "vendors", []) or [])
@@ -384,4 +372,4 @@ class NormalizerAgent:
 
 normalize_quotes = normalize
 
-__all__ = ["USD_TO_INR", "NormalizerAgent", "normalize", "normalize_quotes", "qualify_vendors", "award_eligible_vendors"]
+__all__ = ["USD_TO_INR", "NormalizerAgent", "normalize", "normalize_quotes", "qualify_vendors", "award_eligible_vendors", "questionnaire_matrix", "build_questionnaire_results"]

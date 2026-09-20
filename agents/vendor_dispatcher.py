@@ -322,6 +322,220 @@ class VendorDispatcherAgent:
         return paths
 
 
+    def write_award_notices(
+        self,
+        rfx: RFxLike,
+        awards: dict[str, str],
+        *,
+        lines: list[dict[str, Any]] | None = None,
+    ) -> list[str]:
+        """
+        Stub award notices for each vendor that won ≥1 line.
+
+        Writes award_notice_<vendor>_<rfx>.txt under outbox_dir.
+        awards: {line_id: vendor_id}. No SMTP. Returns outbox paths.
+        Also appends stubbed rows to self.dispatch_log and writes
+        award_log_<rfx_id>.json.
+        """
+        data = _as_dict(rfx)
+        rfx_id = str(data.get("rfx_id") or "UNKNOWN")
+        vendors = {_vendor_fields(v)["vendor_id"]: _vendor_fields(v) for v in (data.get("vendors") or [])}
+        grouped = _group_awards(awards, data, lines=lines)
+        paths: list[str] = []
+        records: list[dict[str, Any]] = []
+        sent_at = datetime.now(timezone.utc).astimezone().isoformat()
+
+        for vendor_id, won in grouped.items():
+            vendor = vendors.get(vendor_id) or {
+                "vendor_id": vendor_id,
+                "name": (won[0].get("vendor_name") if won else "") or vendor_id,
+                "email": "",
+            }
+            # Prefer enriched vendor_name from award rows when RFx vendor missing
+            if won and won[0].get("vendor_name") and vendor["name"] == vendor_id:
+                vendor = {**vendor, "name": str(won[0]["vendor_name"])}
+            notice = build_award_notice(data, vendor, won)
+            notice["from"] = self.from_addr
+            filename = (
+                f"award_notice_{_safe_slug(vendor_id)}_{_safe_slug(rfx_id)}.txt"
+            )
+            email_path = self.outbox_dir / filename
+            artifact = (
+                f"To: {notice['to']}\n"
+                f"Subject: {notice['subject']}\n"
+                f"From: {self.from_addr}\n"
+                f"Date: {sent_at}\n"
+                f"\n"
+                f"{notice['body']}"
+            )
+            email_path.write_text(artifact, encoding="utf-8")
+            paths.append(str(email_path))
+            record = {
+                "kind": "award_notice",
+                "vendor_id": vendor_id,
+                "vendor_name": notice["vendor_name"],
+                "to": notice["to"],
+                "subject": notice["subject"],
+                "rfx_id": rfx_id,
+                "sent_at": sent_at,
+                "status": "stubbed",
+                "delivery": "stubbed",
+                "path": str(email_path),
+                "lines_won": [w.get("line_id") for w in won],
+            }
+            records.append(record)
+            self.dispatch_log.append(record)
+
+        log_path = self.outbox_dir / f"award_log_{_safe_slug(rfx_id)}.json"
+        log_path.write_text(
+            json.dumps(records, indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return paths
+
+
+
+def _line_lookup(rfx_data: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Map line_id -> line fields from the RFx."""
+    out: dict[str, dict[str, Any]] = {}
+    for item in rfx_data.get("line_items") or []:
+        row = _line_fields(item)
+        if row["line_id"]:
+            out[str(row["line_id"])] = row
+    return out
+
+
+def _group_awards(
+    awards: dict[str, str],
+    rfx_data: dict[str, Any],
+    lines: list[dict[str, Any]] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """
+    Group awards by vendor_id.
+
+    awards: {line_id: vendor_id}
+    lines: optional enriched rows (from award_summary / validate_award).
+    """
+    by_line: dict[str, dict[str, Any]] = {}
+    if lines:
+        for row in lines:
+            lid = str(row.get("line_id") or "")
+            if lid:
+                by_line[lid] = dict(row)
+
+    lookup = _line_lookup(rfx_data)
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for line_id, vendor_id in (awards or {}).items():
+        lid = str(line_id)
+        vid = str(vendor_id or "")
+        if not lid or not vid:
+            continue
+        base = dict(lookup.get(lid) or {"line_id": lid, "description": "", "qty": "", "uom": "piece"})
+        extra = by_line.get(lid) or {}
+        row = {
+            "line_id": lid,
+            "description": str(extra.get("description") or base.get("description") or ""),
+            "qty": extra.get("qty", base.get("qty")),
+            "uom": str(extra.get("uom") or base.get("uom") or "piece"),
+            "unit_price_inr": extra.get("unit_price_inr"),
+            "extended_inr": extra.get("extended_inr"),
+            "vendor_id": vid,
+            "vendor_name": str(extra.get("vendor_name") or ""),
+        }
+        grouped.setdefault(vid, []).append(row)
+    return grouped
+
+
+def build_award_notice(
+    rfx: RFxLike,
+    vendor: VendorLike,
+    won_lines: list[dict[str, Any]],
+) -> dict[str, str]:
+    """
+    Build a stub award-notice email (To / Subject / Body) for one vendor.
+
+    Does not write to disk. won_lines should list the lines this vendor won
+    (line_id, description, qty, optional unit_price_inr / extended_inr).
+    """
+    data = _as_dict(rfx)
+    v = _vendor_fields(vendor)
+    rfx_id = str(data.get("rfx_id") or "")
+    title = str(data.get("title") or "")
+
+    if not won_lines:
+        table = "(no lines awarded)"
+    else:
+        rows = []
+        for w in won_lines:
+            lid = str(w.get("line_id") or "")
+            desc = str(w.get("description") or "")
+            qty = _fmt_qty(w.get("qty", ""))
+            uom = str(w.get("uom") or "piece")
+            unit = w.get("unit_price_inr")
+            ext = w.get("extended_inr")
+            price_bit = ""
+            if unit is not None:
+                try:
+                    price_bit = f"  @ INR {float(unit):,.2f}/{uom}"
+                except (TypeError, ValueError):
+                    price_bit = f"  @ {unit}"
+            if ext is not None:
+                try:
+                    price_bit += f"  (ext INR {float(ext):,.2f})"
+                except (TypeError, ValueError):
+                    price_bit += f"  (ext {ext})"
+            rows.append(f"  {lid:>6}  {desc}  qty {qty} {uom}{price_bit}")
+        table = "\n".join(rows)
+
+    subject = f"Award notice — {rfx_id}: {title}".strip(" :")
+    body = f"""Dear {v['name']},
+
+Congratulations — you have been selected for the following line(s) on RFx {rfx_id}.
+
+RFx ID   : {rfx_id}
+Title    : {title}
+Currency : {data.get('currency', 'INR')}
+
+── LINES AWARDED ───────────────────────────────────────────────────────────
+{table}
+
+This is a stub award notice for internal review (SMTP not sent). A formal
+purchase order / contract will follow under separate cover.
+
+Regards,
+Procurement Team
+"""
+    return {
+        "vendor_id": v["vendor_id"],
+        "vendor_name": v["name"],
+        "to": v["email"],
+        "subject": subject,
+        "body": body,
+        "from": "procurement@company.com",
+        "kind": "award_notice",
+    }
+
+
+def write_award_notices(
+    rfx: RFxLike,
+    awards: dict[str, str],
+    *,
+    outbox_dir: str | os.PathLike | None = None,
+    lines: list[dict[str, Any]] | None = None,
+    from_addr: str = "procurement@company.com",
+) -> list[str]:
+    """
+    Stub-write one award_notice_<vendor>_<rfx>.txt per awarded vendor.
+
+    awards: mapping line_id -> vendor_id (pipeline awards map).
+    lines: optional enriched award rows (description, prices).
+    Returns outbox file paths. No SMTP.
+    """
+    return VendorDispatcherAgent(
+        stub=True, outbox_dir=outbox_dir, from_addr=from_addr
+    ).write_award_notices(rfx, awards, lines=lines)
+
+
 def dispatch_rfx(
     rfx: RFxLike,
     *,
@@ -338,4 +552,6 @@ __all__ = [
     "build_cover_email",
     "preview_cover_email",
     "preview_cover_emails",
+    "build_award_notice",
+    "write_award_notices",
 ]

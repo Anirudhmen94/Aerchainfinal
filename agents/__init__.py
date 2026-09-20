@@ -60,8 +60,22 @@ except Exception:
     pass
 
 try:
-    from agents.analyst import AnalystAgent, answer, ask_question
+    from agents.analyst import (
+        AnalystAgent,
+        answer,
+        ask_question,
+        shortlist_vendors,
+        suggest_split_award,
+        validate_award,
+    )
 
-    __all__.extend(["AnalystAgent", "answer", "ask_question"])
+    __all__.extend([
+        "AnalystAgent",
+        "answer",
+        "ask_question",
+        "shortlist_vendors",
+        "suggest_split_award",
+        "validate_award",
+    ])
 except Exception:
     pass

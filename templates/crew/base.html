@@ -37,6 +37,30 @@
     .tab-open:hover { background:#f8fafc; border-color:#94a3b8; }
     .tab-done-dot { width:0.45rem; height:0.45rem; border-radius:9999px; background:#22c55e; display:inline-block; }
     .empty-hint { background:#fffbeb; border:1px solid #fde68a; color:#92400e; border-radius:0.75rem; padding:1rem; font-size:0.875rem; }
+
+    .provisional-banner { background:#fffbeb; border:1px solid #f59e0b; color:#92400e; border-radius:0.75rem; padding:0.75rem 1rem; font-size:0.875rem; display:flex; gap:0.75rem; align-items:flex-start; }
+    .provisional-banner strong { font-weight:600; }
+    .shortlist-strip { display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; }
+    .shortlist-card { border:1px solid #c7d2fe; background:#eef2ff; color:#312e81; border-radius:0.75rem; padding:0.5rem 0.75rem; font-size:0.75rem; min-width:8rem; }
+    .shortlist-card .cov { font-variant-numeric:tabular-nums; color:#4338ca; font-weight:600; }
+    .excluded-card { border:1px solid #fecaca; background:#fff1f2; color:#9f1239; border-radius:0.75rem; padding:0.4rem 0.65rem; font-size:0.7rem; }
+    .price-cell { cursor:pointer; }
+    .price-cell:hover { outline:2px solid #818cf8; outline-offset:-2px; }
+    .evidence-backdrop { position:fixed; inset:0; background:rgba(15,23,42,0.35); z-index:40; }
+    .evidence-drawer { position:fixed; top:0; right:0; height:100%; width:min(28rem,100%); background:#fff; z-index:50; box-shadow:-8px 0 24px rgba(15,23,42,0.15); overflow:auto; padding:1.25rem; }
+    .evidence-drawer h3 { font-size:1rem; font-weight:600; margin-bottom:0.25rem; }
+    .evidence-meta { font-size:0.75rem; color:#64748b; margin-bottom:0.75rem; }
+    .evidence-snippet { background:#f8fafc; border:1px solid #e2e8f0; border-radius:0.5rem; padding:0.5rem 0.75rem; font-size:0.75rem; margin-bottom:0.5rem; }
+    .evidence-snippet .loc { color:#64748b; font-size:0.65rem; margin-top:0.25rem; }
+
+
+    .q-pass { background:#ecfdf5; color:#14532d; }
+    .q-fail { background:#fef2f2; color:#991b1b; }
+    .q-unanswered { background:#f8fafc; color:#94a3b8; }
+    .q-cell { font-size:0.7rem; text-align:center; vertical-align:top; min-width:6.5rem; }
+    .q-cell .ans { display:block; margin-top:0.15rem; font-weight:500; max-width:9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-left:auto; margin-right:auto; }
+    .ko-badge { display:inline-block; font-size:0.6rem; padding:0.05rem 0.3rem; border-radius:9999px; background:#fee2e2; color:#991b1b; font-weight:700; text-transform:uppercase; letter-spacing:0.03em; }
+
     @media print {
       .no-print { display:none !important; }
       body { background:#fff; }
@@ -53,5 +77,6 @@
   <main class="max-w-6xl mx-auto px-4 py-8">
     {% block content %}{% endblock %}
   </main>
+  <div id="evidence-root"></div>
 </body>
 </html>

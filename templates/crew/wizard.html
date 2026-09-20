@@ -20,6 +20,22 @@
   </nav>
 </div>
 
+
+{% if provisional and provisional.active and step in ["inbox", "compare", "award"] %}
+<div class="provisional-banner mb-4 no-print" role="status">
+  <span aria-hidden="true">⚠️</span>
+  <div>
+    <strong>{{ provisional.message }}</strong>
+    <div class="text-xs mt-0.5 opacity-90">
+      {{ provisional.vendors_quoted }}/{{ provisional.expected_vendors }} vendors quoted
+      · {{ provisional.parsed_messages }} parsed
+      · {{ provisional.pending_messages }} pending
+      — matrix/award may be incomplete until extraction finishes.
+    </div>
+  </div>
+</div>
+{% endif %}
+
 {# ═══════════════ DRAFT ═══════════════ #}
 {% if step == "draft" %}
 <section class="card space-y-4">
@@ -45,7 +61,7 @@
     <button class="btn" type="submit" id="gen-btn">
       {% if rfx.line_items %}Regenerate line items{% else %}Generate line items{% endif %}
     </button>
-    <span class="text-xs text-slate-500 ml-2">Calls RFx Drafter (Haiku) · expects 30 lines</span>
+    <span class="text-xs text-slate-500 ml-2">Calls RFx Drafter (Haiku) · line count follows the brief (default 30)</span>
   </form>
 
   {% if rfx.line_items %}
@@ -146,6 +162,17 @@
     </ul>
     <p class="text-xs text-slate-600 mt-2">{{ pipe.dispatch_paths|length }} outbox file(s) written.</p>
   </div>
+
+  {% if award_notice_paths %}
+  <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-4 mt-3">
+    <div class="font-medium text-indigo-900 mb-2">Award notices (stub)</div>
+    <ul class="text-sm space-y-1">
+      {% for p in award_notice_paths %}
+      <li><span class="chip chip-info">award_notice</span> <code class="text-xs">{{ p }}</code></li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
   <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=inbox">Open Inbox →</a>
   {% endif %}
   <div class="flex flex-wrap gap-2">
@@ -275,6 +302,34 @@
     {% endfor %}
   </div>
 
+
+  {% if shortlist_pass or shortlist_fail %}
+  <div class="mb-3 space-y-2 no-print">
+    <div class="text-xs font-medium text-slate-600 uppercase tracking-wide">Shortlist (questionnaire Pass)</div>
+    <div class="shortlist-strip">
+      {% for row in shortlist_pass %}
+      <div class="shortlist-card">
+        <div class="font-medium">{{ row.name }}</div>
+        <div class="text-[10px] text-indigo-700">{{ row.vendor_id }} · Pass</div>
+        <div class="cov">{{ (row.coverage * 100)|round(0)|int }}% coverage</div>
+      </div>
+      {% else %}
+      <span class="text-xs text-slate-500">No Pass vendors yet.</span>
+      {% endfor %}
+    </div>
+    {% if shortlist_fail %}
+    <div class="text-xs font-medium text-slate-500 mt-2">Excluded (Fail)</div>
+    <div class="shortlist-strip">
+      {% for row in shortlist_fail %}
+      <div class="excluded-card" title="Failed questionnaire knockouts">
+        {{ row.name }} · {{ (row.coverage * 100)|round(0)|int }}%
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <details class="text-sm mb-3" open>
     <summary class="cursor-pointer font-medium">Knockout questionnaire results</summary>
     <div class="mt-2 overflow-auto">
@@ -332,32 +387,20 @@
           {% for vid in vendors_in_matrix %}
             {% set cell = cell_map.get((li.line_id, vid)) %}
             {% set st = (cell.status if cell else 'missing') %}
-            <td class="text-right tabular-nums cell-{{ st }} {% if vid not in (cmp.award_eligible_vendors or []) %}opacity-40{% endif %}">
+            <td class="text-right tabular-nums cell-{{ st }} price-cell {% if vid not in (cmp.award_eligible_vendors or []) %}opacity-40{% endif %}"
+                {% if cell %}
+                hx-get="/crew/{{ rfx.rfx_id }}/evidence?line_id={{ li.line_id }}&vendor_id={{ vid }}"
+                hx-target="#evidence-root"
+                hx-swap="innerHTML"
+                title="Open evidence"
+                {% endif %}>
               {% if cell %}
-              <details>
-                <summary class="cursor-pointer list-none">
                   {% if cell.unit_price_inr is not none %}
                     ₹{{ '%.2f'|format(cell.unit_price_inr) }}
                   {% else %}
                     <span class="text-slate-400">—</span>
                   {% endif %}
                   <div><span class="status-pill status-{{ st }}">{{ st }}</span></div>
-                </summary>
-                <div class="mt-1 text-left text-[10px] text-slate-600 space-y-0.5">
-                  {% if cell.original_price is not none %}
-                  <div>Orig: {{ cell.original_currency or '?' }} {{ cell.original_price }}
-                    {% if cell.original_uom %}/ {{ cell.original_uom }}{% endif %}
-                  </div>
-                  {% endif %}
-                  {% for f in (cell.flags or []) %}
-                  <div class="text-amber-800">• {{ f }}</div>
-                  {% endfor %}
-                  {% set ev = (evidence_by_vendor or {}).get(vid) %}
-                  {% if ev %}
-                  <div class="text-slate-500 italic truncate" title="{{ ev }}">Evidence: {{ ev[:120] }}{% if ev|length > 120 %}…{% endif %}</div>
-                  {% endif %}
-                </div>
-              </details>
               {% else %}
                 <span class="status-pill status-missing">missing</span>
               {% endif %}
@@ -368,6 +411,48 @@
       </tbody>
     </table>
   </div>
+
+
+  {% if q_matrix %}
+  <div class="mt-4 mb-2">
+    <h3 class="font-medium text-sm mb-1">Questionnaire comparison</h3>
+    <p class="text-xs text-slate-500 mb-2">Rows = questions (KO = knockout). Cells = Pass / Fail / Unanswered with the extracted answer.</p>
+    <div class="overflow-auto max-h-[22rem] border border-slate-200 rounded-lg">
+      <table class="matrix w-full">
+        <thead class="bg-slate-50 sticky top-0">
+          <tr>
+            <th class="text-left">Question</th>
+            {% set _vids = q_matrix[0].by_vendor.keys() if q_matrix else [] %}
+            {% for vid in _vids %}
+            <th>{{ q_matrix[0].by_vendor[vid].vendor_name or vid }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+        {% for row in q_matrix %}
+          <tr>
+            <td class="text-left max-w-[16rem]">
+              <div class="font-medium flex items-center gap-1 flex-wrap">
+                {{ row.question_id }}
+                {% if row.knockout %}<span class="ko-badge">KO</span>{% endif %}
+              </div>
+              <div class="text-slate-500 text-[11px] leading-snug">{{ row.question }}</div>
+            </td>
+            {% for vid, cell in row.by_vendor.items() %}
+            <td class="q-cell q-{{ cell.status }}">
+              <span class="status-pill status-{{ 'ok' if cell.status == 'pass' else ('missing' if cell.status == 'unanswered' else 'uncertain') }}">
+                {% if cell.status == 'pass' %}Pass{% elif cell.status == 'fail' %}Fail{% else %}Unanswered{% endif %}
+              </span>
+              <span class="ans" title="{{ cell.answer or '' }}">{% if cell.answer %}{{ cell.answer }}{% else %}—{% endif %}</span>
+            </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
 
   {% if cmp.vendor_flags %}
   <details class="text-sm">
@@ -472,6 +557,34 @@
     </div>
   </div>
 
+
+  {% if shortlist_pass or shortlist_fail %}
+  <div class="mb-3 space-y-2 no-print">
+    <div class="text-xs font-medium text-slate-600 uppercase tracking-wide">Shortlist (questionnaire Pass)</div>
+    <div class="shortlist-strip">
+      {% for row in shortlist_pass %}
+      <div class="shortlist-card">
+        <div class="font-medium">{{ row.name }}</div>
+        <div class="text-[10px] text-indigo-700">{{ row.vendor_id }} · Pass</div>
+        <div class="cov">{{ (row.coverage * 100)|round(0)|int }}% coverage</div>
+      </div>
+      {% else %}
+      <span class="text-xs text-slate-500">No Pass vendors yet.</span>
+      {% endfor %}
+    </div>
+    {% if shortlist_fail %}
+    <div class="text-xs font-medium text-slate-500 mt-2">Excluded (Fail)</div>
+    <div class="shortlist-strip">
+      {% for row in shortlist_fail %}
+      <div class="excluded-card" title="Failed questionnaire knockouts">
+        {{ row.name }} · {{ (row.coverage * 100)|round(0)|int }}%
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% if not pipe.comparison %}
   <div class="empty-hint">
     Generate an RFx and parse inbox, then build Compare first.
@@ -542,6 +655,29 @@
   </div>
   {% endif %}
   {% endif %}
+
+  {% if pipe.awards %}
+  <div class="rounded-lg border border-slate-200 bg-white p-4 space-y-2 no-print">
+    <div class="font-medium text-sm">Notify awarded vendors (stub)</div>
+    <p class="text-xs text-slate-600">Writes plaintext <code>award_notice_&lt;vendor&gt;_&lt;rfx&gt;.txt</code> into <code>data/outbox/</code>. No SMTP.</p>
+    <form method="post" action="/crew/{{ rfx.rfx_id }}/award/notify" class="flex flex-wrap items-center gap-2">
+      <button class="btn" type="submit">Send award notices (stub)</button>
+      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send">Open outbox on Send →</a>
+    </form>
+    {% if award_notice_paths %}
+    <div class="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+      <div class="font-medium mb-1">Notices written ({{ award_notice_paths|length }})</div>
+      <ul class="text-xs space-y-0.5">
+        {% for p in award_notice_paths %}
+        <li><code>{{ p }}</code></li>
+        {% endfor %}
+      </ul>
+      <a class="underline text-xs" href="/crew/{{ rfx.rfx_id }}/wizard?step=send">View on Send tab outbox list</a>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <a class="btn-sec no-print" href="/crew/{{ rfx.rfx_id }}/wizard?step=ask">← Ask</a>
 </section>
 {% endif %}

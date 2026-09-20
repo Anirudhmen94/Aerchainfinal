@@ -1,0 +1,64 @@
+<div class="evidence-backdrop" onclick="document.getElementById('evidence-root').innerHTML=''"></div>
+<aside class="evidence-drawer" role="dialog" aria-label="Price evidence">
+  <div class="flex items-start justify-between gap-3 mb-3">
+    <div>
+      <h3>{{ evidence.line_id }} · {{ evidence.vendor_name }}</h3>
+      <div class="evidence-meta">{{ evidence.line_description }}</div>
+    </div>
+    <button type="button" class="btn-sec text-xs py-1 px-2"
+            onclick="document.getElementById('evidence-root').innerHTML=''">Close</button>
+  </div>
+
+  <div class="flex flex-wrap gap-2 mb-3 text-xs">
+    <span class="status-pill status-{{ evidence.status }}">{{ evidence.status }}</span>
+    {% if evidence.unit_price_inr is not none %}
+    <span class="chip">₹{{ '%.4g'|format(evidence.unit_price_inr) }} / pc</span>
+    {% endif %}
+    {% if evidence.confidence is not none %}
+    <span class="chip">confidence {{ '%.2f'|format(evidence.confidence) }}</span>
+    {% endif %}
+  </div>
+
+  <dl class="text-xs space-y-2 mb-4">
+    <div>
+      <dt class="text-slate-500 uppercase tracking-wide text-[10px]">Source file</dt>
+      <dd class="font-medium break-all">{{ evidence.source_file or '—' }}</dd>
+    </div>
+    {% if evidence.original_price is not none %}
+    <div>
+      <dt class="text-slate-500 uppercase tracking-wide text-[10px]">Original quote</dt>
+      <dd>{{ evidence.original_currency or '?' }} {{ evidence.original_price }}{% if evidence.original_uom %} / {{ evidence.original_uom }}{% endif %}</dd>
+    </div>
+    {% endif %}
+    <div>
+      <dt class="text-slate-500 uppercase tracking-wide text-[10px]">FX / UOM note</dt>
+      <dd>{{ evidence.fx_uom_note or '—' }}</dd>
+    </div>
+    {% if evidence.flags %}
+    <div>
+      <dt class="text-slate-500 uppercase tracking-wide text-[10px]">Flags</dt>
+      <dd>
+        <ul class="list-disc list-inside text-amber-800">
+          {% for f in evidence.flags %}<li>{{ f }}</li>{% endfor %}
+        </ul>
+      </dd>
+    </div>
+    {% endif %}
+  </dl>
+
+  <div class="text-xs font-medium mb-2">Evidence snippets</div>
+  {% if evidence.snippets %}
+    {% for s in evidence.snippets %}
+    <div class="evidence-snippet">
+      <div>{{ s.snippet }}</div>
+      {% if s.location %}<div class="loc">📍 {{ s.location }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  {% else %}
+    <p class="text-xs text-slate-500">No raw evidence snippets for this vendor/line.</p>
+  {% endif %}
+
+  {% if evidence.notes %}
+  <div class="mt-3 text-xs text-slate-600"><span class="font-medium">Notes:</span> {{ evidence.notes }}</div>
+  {% endif %}
+</aside>

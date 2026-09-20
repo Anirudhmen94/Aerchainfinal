@@ -17,6 +17,7 @@ from fastapi import FastAPI, File, Form, Request, UploadFile  # noqa: E402
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response  # noqa: E402
 from fastapi.templating import Jinja2Templates  # noqa: E402
 
+from agents.qualification import questionnaire_matrix  # noqa: E402
 from orchestrator.pipeline import (  # noqa: E402
     WIZARD_STEPS,
     RFxPipeline,
@@ -99,6 +100,18 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "Show me USD / UOM conversions that changed the matrix.",
     ]
 
+    shortlist_rows = pipe.shortlist() if pipe.comparison else []
+    q_matrix = []
+    if pipe.rfx and pipe.comparison:
+        try:
+            q_matrix = questionnaire_matrix(pipe.rfx, pipe.comparison)
+        except Exception:
+            q_matrix = []
+
+    shortlist_pass = [r for r in shortlist_rows if r.get("pass")]
+    shortlist_fail = [r for r in shortlist_rows if not r.get("pass")]
+    provisional = pipe.provisional_status()
+
     return {
         "pipe": pipe,
         "rfx": pipe.rfx,
@@ -114,6 +127,11 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "snapshot": pipe.snapshot(),
         "evidence_by_vendor": evidence_by_vendor,
         "suggested_questions": suggested_questions,
+        "provisional": provisional,
+        "shortlist_pass": shortlist_pass,
+        "shortlist_fail": shortlist_fail,
+        "award_notice_paths": list(getattr(pipe, "award_notice_paths", None) or []),
+        "q_matrix": q_matrix,
     }
 
 
@@ -620,6 +638,41 @@ def crew_award_print(request: Request, rfx_id: str):
         return HTMLResponse("RFx not found", status_code=404)
     ctx = _wizard_ctx(pipe)
     return _render(request, "crew/award_print.html", **ctx)
+
+
+
+
+@app.get("/crew/{rfx_id}/evidence", response_class=HTMLResponse)
+def crew_evidence(request: Request, rfx_id: str, line_id: str = "", vendor_id: str = ""):
+    """Evidence drawer partial for a Compare/Award price cell."""
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    payload = pipe.evidence_for_cell(line_id, vendor_id)
+    return _render(
+        request,
+        "crew/partials/evidence_drawer.html",
+        pipe=pipe,
+        rfx=pipe.rfx,
+        evidence=payload,
+    )
+
+
+@app.post("/crew/{rfx_id}/award/notify", response_class=HTMLResponse)
+def crew_award_notify(request: Request, rfx_id: str):
+    """Stub-write award_notice_*.txt into data/outbox (no SMTP)."""
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return HTMLResponse("RFx not found", status_code=404)
+    try:
+        paths = pipe.notify_awarded_vendors()
+    except Exception as exc:
+        return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
+    _save(pipe)
+    return RedirectResponse(
+        f"/crew/{rfx_id}/wizard?step=award&notices={len(paths)}",
+        status_code=303,
+    )
 
 
 @app.get("/crew/{rfx_id}/snapshot")

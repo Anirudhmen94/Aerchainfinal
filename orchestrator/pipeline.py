@@ -26,7 +26,9 @@ from agents.rfx_drafter import apply_rfx_edits, draft_rfx, regenerate_line_items
 from agents.vendor_dispatcher import (
     VendorDispatcherAgent,
     preview_cover_emails,
+    write_award_notices,
 )
+from agents.analyst import shortlist_vendors
 from shared_models import (
     ComparisonTable,
     ExtractedQuote,
@@ -89,6 +91,7 @@ class RFxPipeline:
         self.inbox: list[InboxMessage] = []
         self.awards: dict[str, str] = {}
         self.award_validation: dict[str, Any] = {}
+        self.award_notice_paths: list[str] = []
         self.step: str = "idle"
         self.wizard_step: str = "draft"
 
@@ -798,6 +801,162 @@ class RFxPipeline:
         self._persist()
         return self.snapshot()
 
+
+    def provisional_status(self) -> dict[str, Any]:
+        """Amber banner state when inbox/quotes are incomplete vs expected vendors."""
+        expected = 5
+        if self.rfx and self.rfx.vendors:
+            expected = max(1, len(self.rfx.vendors))
+        inbox = list(self.inbox or [])
+        quotes = list(self.quotes or [])
+        pending_msgs = [
+            m for m in inbox
+            if getattr(m, "status", "new") in ("new", "error")
+            or str(getattr(m, "status", "")) in ("new", "error", "parsing")
+        ]
+        parsed_msgs = [m for m in inbox if getattr(m, "status", "") == "parsed"]
+        vendor_ids_quoted = {getattr(q, "vendor_id", "") for q in quotes if getattr(q, "vendor_id", "")}
+        still_extracting = max(0, expected - len(vendor_ids_quoted))
+        # Prefer unparsed inbox count when seeded messages exist
+        if inbox:
+            still_extracting = max(still_extracting, len(pending_msgs))
+        active = bool(inbox or quotes) and (
+            bool(pending_msgs) or len(vendor_ids_quoted) < expected
+        )
+        if not inbox and not quotes:
+            active = False
+        msg = ""
+        if active:
+            n = still_extracting or len(pending_msgs) or (expected - len(vendor_ids_quoted))
+            n = max(1, n)
+            msg = f"Provisional — {n} vendor response{'s' if n != 1 else ''} still extracting"
+        return {
+            "active": active,
+            "message": msg,
+            "pending_messages": len(pending_msgs),
+            "parsed_messages": len(parsed_msgs),
+            "quotes": len(quotes),
+            "expected_vendors": expected,
+            "vendors_quoted": len(vendor_ids_quoted),
+            "still_extracting": still_extracting,
+        }
+
+    def shortlist(self) -> list[dict[str, Any]]:
+        """Pass-first shortlist rows for Compare/Award chips."""
+        if not self.comparison:
+            return []
+        try:
+            return shortlist_vendors(self.comparison, rfx=self.rfx)
+        except Exception:
+            return []
+
+    def evidence_for_cell(self, line_id: str, vendor_id: str) -> dict[str, Any]:
+        """Assemble evidence drawer payload for one comparison cell."""
+        cell = None
+        if self.comparison:
+            for c in self.comparison.cells:
+                if c.line_id == line_id and c.vendor_id == vendor_id:
+                    cell = c
+                    break
+        quote = next((q for q in (self.quotes or []) if q.vendor_id == vendor_id), None)
+        name = vendor_id
+        if self.rfx:
+            for v in self.rfx.vendors:
+                if v.vendor_id == vendor_id:
+                    name = v.name
+                    break
+        if self.comparison and self.comparison.vendor_names:
+            name = self.comparison.vendor_names.get(vendor_id, name)
+
+        snippets: list[dict[str, str]] = []
+        source_file = ""
+        if quote:
+            for item in quote.raw_evidence or []:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("kind") == "meta":
+                    source_file = str(item.get("source_file") or source_file)
+                    continue
+                sn = str(item.get("snippet") or item.get("text") or "").strip()
+                if not sn:
+                    continue
+                # Prefer snippets that mention this line id; keep a few general ones
+                loc = str(item.get("location") or "")
+                snippets.append({"snippet": sn, "location": loc})
+            # Rank: line_id mentions first
+            lid = str(line_id).lower()
+            snippets.sort(
+                key=lambda s: (0 if lid and lid in s["snippet"].lower() else 1)
+            )
+            snippets = snippets[:8]
+            if not source_file:
+                source_file = str(getattr(quote, "source_format", "") or "")
+
+        line_desc = ""
+        if self.rfx:
+            for li in self.rfx.line_items:
+                if li.line_id == line_id:
+                    line_desc = li.description
+                    break
+
+        status = cell.status if cell else "missing"
+        flags = list(cell.flags) if cell else []
+        fx_uom_note = "; ".join(flags) if flags else ""
+        if cell and cell.status == "converted" and cell.original_price is not None:
+            bit = f"Original {cell.original_currency or '?'} {cell.original_price}"
+            if cell.original_uom:
+                bit += f" / {cell.original_uom}"
+            fx_uom_note = f"{bit}. {fx_uom_note}".strip(". ")
+
+        return {
+            "line_id": line_id,
+            "line_description": line_desc,
+            "vendor_id": vendor_id,
+            "vendor_name": name,
+            "status": status,
+            "unit_price_inr": cell.unit_price_inr if cell else None,
+            "original_price": cell.original_price if cell else None,
+            "original_currency": cell.original_currency if cell else None,
+            "original_uom": cell.original_uom if cell else None,
+            "flags": flags,
+            "fx_uom_note": fx_uom_note,
+            "source_file": source_file,
+            "snippets": snippets,
+            "notes": getattr(quote, "notes", "") if quote else "",
+            "confidence": getattr(quote, "confidence", None) if quote else None,
+        }
+
+    def notify_awarded_vendors(self) -> list[str]:
+        """Stub-write award_notice_*.txt into data/outbox via dispatcher helper."""
+        if not self.rfx:
+            raise RuntimeError("No RFx loaded.")
+        if not self.awards:
+            raise RuntimeError("Save awards before sending notices.")
+        lines = None
+        if self.award_validation:
+            lines = self.award_validation.get("awards")
+        paths = write_award_notices(
+            self.rfx,
+            self.awards,
+            outbox_dir=OUTBOX_DIR,
+            lines=lines,
+        )
+        self.award_notice_paths = [str(p) for p in paths]
+        # Also surface on dispatch_log so Send tab can list them
+        for p in self.award_notice_paths:
+            self.dispatch_log.append(
+                {
+                    "kind": "award_notice",
+                    "path": p,
+                    "file": Path(p).name,
+                    "status": "stubbed",
+                    "delivery": "stubbed (no SMTP)",
+                }
+            )
+        self._persist()
+        return self.award_notice_paths
+
+
     def snapshot(self) -> dict[str, Any]:
         return {
             "step": self.step,
@@ -814,6 +973,7 @@ class RFxPipeline:
             "inbox": [m.model_dump() for m in self.inbox],
             "awards": self.awards,
             "award_validation": self.award_validation,
+            "award_notice_paths": list(self.award_notice_paths or []),
         }
 
     def load_snapshot(self, data: dict[str, Any]) -> None:
@@ -843,6 +1003,7 @@ class RFxPipeline:
         self.inbox = [InboxMessage.model_validate(m) for m in data.get("inbox") or []]
         self.awards = dict(data.get("awards") or {})
         self.award_validation = dict(data.get("award_validation") or {})
+        self.award_notice_paths = list(data.get("award_notice_paths") or [])
 
     def _persist(self) -> None:
         if not self.rfx:

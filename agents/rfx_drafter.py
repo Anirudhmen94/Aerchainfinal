@@ -53,6 +53,52 @@ def infer_line_count(brief: str, *, default: int = 30, minimum: int = 1, maximum
     return default
 
 
+def _align_prose_to_line_count(text: str, target_lines: int, brief: str) -> str:
+    """Keep scope/title prose consistent with the brief's SKU count.
+
+    Models often emit "30 SKUs" in scope even when asked for 15. Rewrite
+    countable phrases to match target_lines without inventing new commercial terms.
+    """
+    if not text:
+        return text
+    n = int(target_lines)
+    out = text
+    patterns = [
+        (r"(?:~|about|around|approximately)\s*\d{1,2}\s*SKUs?", f"~{n} SKUs"),
+        (r"\b\d{1,2}\s*SKUs?\b", f"{n} SKUs"),
+        (r"\b\d{1,2}\s*line\s*items?\b", f"{n} line items"),
+        (r"\b\d{1,2}\s*SKU\b", f"{n} SKU"),
+        (r"(?:a\s+)?(?:full\s+)?set\s+of\s+\d{1,2}\s+line\s+items", f"a set of {n} line items"),
+    ]
+    for pat, repl in patterns:
+        out = re.sub(pat, repl, out, flags=re.IGNORECASE)
+    # Append once only when the brief explicitly named this count and prose has none
+    brief_n = infer_line_count(brief, default=-1)
+    if (
+        brief_n == n
+        and brief_n > 0
+        and not re.search(r"\bSKUs?\b|line\s*items?", out, flags=re.IGNORECASE)
+    ):
+        out = out.rstrip() + f" This RFx covers {n} SKUs as stated in the buyer brief."
+    return out
+
+
+def _align_rfx_prose(
+    rfx: RFx,
+    target_lines: int,
+    brief: str,
+    *,
+    fields: tuple[str, ...] = ("title", "scope", "terms"),
+) -> RFx:
+    """Rewrite countable SKU phrases in selected prose fields."""
+    update: dict[str, str] = {}
+    for key in fields:
+        val = getattr(rfx, key, None)
+        if isinstance(val, str):
+            update[key] = _align_prose_to_line_count(val, target_lines, brief)
+    return rfx.model_copy(update=update) if update else rfx
+
+
 TOOL_NAME = "emit_rfx"
 
 # Realistic India corrugated shortlist — pad/seed when the model omits vendors
@@ -186,7 +232,7 @@ def _user_content(
         "Buyer brief (plain language):\n\n"
         f"{brief.strip()}\n\n"
         f"Draft the complete RFx now via emit_rfx. Remember: exactly {target_lines} line items "
-        f"(the brief asked for this count — do NOT emit 30 unless N={target_lines}), "
+        f"(the brief asked for this count — do NOT emit 30 unless N={target_lines}). Title and scope MUST state the same count (~{target_lines} SKUs / {target_lines} line items) — never write a different SKU count in scope than in line_items. "
         "8–12 questionnaire items with 3–4 knockout, and exactly 5 vendors."
     )
     if context_note:
@@ -515,12 +561,17 @@ def draft_rfx(brief: str, **kwargs: Any) -> RFx:
     _require_knockouts(payload.questionnaire)
 
     rfx = _to_rfx(payload, brief, rfx_id=rfx_id)
+    rfx = _align_rfx_prose(rfx, target_lines, brief)
 
     # Manual edits win over model output for the overlay fields.
     overlay_keys = ("title", "scope", "terms", "currency", "vendors")
     overlays = {k: kwargs[k] for k in overlay_keys if k in kwargs}
     if overlays:
         rfx = _overlay_edits(rfx, overlays)
+        # Re-align only fields the caller did not explicitly override.
+        remain = tuple(k for k in ("title", "scope", "terms") if k not in overlays)
+        if remain:
+            rfx = _align_rfx_prose(rfx, len(rfx.line_items), brief, fields=remain)
 
     return RFx.model_validate(rfx.model_dump())
 
@@ -628,4 +679,5 @@ __all__ = [
     "RFxDraftError",
     "DEFAULT_HAIKU_MODEL",
     "infer_line_count",
+    "_align_rfx_prose",
 ]
