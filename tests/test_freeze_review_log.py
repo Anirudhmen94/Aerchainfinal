@@ -77,8 +77,11 @@ def test_freeze_and_block_edits(tmp_path, monkeypatch):
     pipe.unfreeze_award(note="reopen")
     assert not pipe.is_frozen
     assert "unfreeze" in [e["action"] for e in pipe.review_log]
-    pipe.save_awards({"L1": "v2", "L2": "v2"})
-    assert pipe.awards["L1"] == "v2"
+    # Changing away from auto-suggested vendor queues a provisional override
+    result = pipe.save_awards({"L1": "v2", "L2": "v2"})
+    assert "L1" not in pipe.awards  # provisional until manager approval
+    assert any(r.get("status") == "pending" and r.get("line_id") == "L1" for r in pipe.partial_requests)
+    assert result.get("_overrides_pending")
 
 
 def test_snapshot_roundtrip(tmp_path, monkeypatch):

@@ -425,6 +425,7 @@ class RFxPipeline:
         self.freeze: Optional[dict[str, Any]] = None
         self.review_log: list[dict[str, Any]] = []
         self.partial_requests: list[dict[str, Any]] = []
+        self.suggested_awards: dict[str, str] = {}
         self.step: str = "idle"
         self.wizard_step: str = "draft"
 
@@ -984,6 +985,153 @@ class RFxPipeline:
                 latest = req
         return latest
 
+
+    def ensure_auto_awards(self) -> bool:
+        """Pre-fill Award with cheapest Pass split when empty. Returns True if ran."""
+        if self.is_frozen:
+            return False
+        if not self.comparison or not self.rfx:
+            return False
+        if self.awards:
+            # Still capture baseline if missing (legacy sessions)
+            if not self.suggested_awards:
+                self.suggested_awards = dict(self.awards)
+                self._persist()
+            return False
+        try:
+            self.suggest_awards()
+            return True
+        except Exception:
+            return False
+
+    def firm_awards_map(self) -> dict[str, str]:
+        """Awards that are fully confirmed (not pending partial/override)."""
+        pending_lines = {
+            str(r.get("line_id"))
+            for r in (self.partial_requests or [])
+            if r.get("status") == "pending" and r.get("line_id")
+        }
+        return {
+            str(lid): str(vid)
+            for lid, vid in (self.awards or {}).items()
+            if lid and vid and str(lid) not in pending_lines
+        }
+
+    def _manager_email(self) -> str:
+        return "manager@aerchain.example"
+
+    def _write_manager_outbox(
+        self,
+        *,
+        notice_kind: str,
+        subject: str,
+        body: str,
+        request_id: str = "",
+        extra: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        """Stub a manager notification into data/outbox + dispatch_log (kind=manager)."""
+        OUTBOX_DIR.mkdir(parents=True, exist_ok=True)
+        rfx_id = (self.rfx.rfx_id if self.rfx else "UNKNOWN")
+        slug = request_id or notice_kind
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(slug))[:48] or "notice"
+        fname = f"manager_{notice_kind}_{safe}_{re.sub(r'[^A-Za-z0-9._-]+', '_', rfx_id)}.txt"
+        path = OUTBOX_DIR / fname
+        sent_at = self._now_iso()
+        artifact = (
+            f"To: {self._manager_email()}\n"
+            f"Subject: {subject}\n"
+            f"From: buyer@aerchain.example\n"
+            f"Date: {sent_at}\n"
+            f"\n"
+            f"{body}"
+        )
+        path.write_text(artifact, encoding="utf-8")
+        preview = " ".join(body.split())
+        if len(preview) > 220:
+            preview = preview[:217] + "…"
+        record: dict[str, Any] = {
+            "kind": "manager",
+            "notice_kind": notice_kind,
+            "vendor_id": "manager",
+            "vendor_name": "Manager",
+            "to": self._manager_email(),
+            "subject": subject,
+            "body": body,
+            "body_preview": preview,
+            "rfx_id": rfx_id,
+            "sent_at": sent_at,
+            "status": "stub_sent",
+            "delivery": "stub_sent",
+            "path": str(path),
+            "request_id": request_id or "",
+        }
+        if extra:
+            record.update(extra)
+        # Keep prior manager + RFQ + award rows; append this notice
+        self.dispatch_log = list(self.dispatch_log or [])
+        self.dispatch_log.append(record)
+        self.dispatch_paths = list(self.dispatch_paths or []) + [str(path)]
+        return record
+
+    def _notify_manager_approval_needed(self, entry: dict[str, Any]) -> dict[str, Any]:
+        kind = str(entry.get("kind") or "partial")
+        gaps = entry.get("gaps") or []
+        gap_txt = "; ".join(str(g) for g in gaps[:6]) if gaps else "(none)"
+        suggested = entry.get("suggested_vendor_id") or ""
+        subject = (
+            f"[Manager approval needed] {entry.get('line_id')} → "
+            f"{entry.get('vendor_name') or entry.get('vendor_id')} ({kind})"
+        )
+        body = (
+            f"A buyer requested manager approval on RFx "
+            f"{self.rfx.rfx_id if self.rfx else ''}.\n\n"
+            f"Request ID: {entry.get('request_id')}\n"
+            f"Kind: {kind}\n"
+            f"Line: {entry.get('line_id')}\n"
+            f"Vendor: {entry.get('vendor_name') or entry.get('vendor_id')} "
+            f"({entry.get('vendor_id')})\n"
+            f"Unit price (INR): {entry.get('unit_price_inr')}\n"
+            f"Suggested vendor (system): {suggested or '—'}\n"
+            f"Gaps / reason:\n  {gap_txt}\n\n"
+            f"Buyer note:\n  {entry.get('buyer_note') or '(none)'}\n\n"
+            f"This is a stub email (no SMTP). Approve/reject via Audit/API if needed.\n"
+        )
+        return self._write_manager_outbox(
+            notice_kind="approval",
+            subject=subject,
+            body=body,
+            request_id=str(entry.get("request_id") or ""),
+            extra={
+                "line_id": entry.get("line_id"),
+                "related_vendor_id": entry.get("vendor_id"),
+            },
+        )
+
+    def _notify_manager_awards_sent(self, vendor_names: list[str]) -> dict[str, Any]:
+        names = vendor_names or []
+        if len(names) == 1:
+            who = f"vendor {names[0]}"
+        elif not names:
+            who = "no vendors (nothing firm to send)"
+        else:
+            who = "vendors " + ", ".join(names)
+        subject = f"[Awards sent] Notices stub-sent for {who}"
+        body = (
+            f"Award notices were stub-sent on RFx "
+            f"{self.rfx.rfx_id if self.rfx else ''}.\n\n"
+            f"Confirmed vendors notified:\n"
+            + ("\n".join(f"  - {n}" for n in names) if names else "  (none)")
+            + "\n\nPending partial/override vendors were NOT emailed.\n"
+            "This is a stub email (no SMTP).\n"
+        )
+        return self._write_manager_outbox(
+            notice_kind="awards_sent",
+            subject=subject,
+            body=body,
+            request_id=f"AS-{uuid.uuid4().hex[:8].upper()}",
+            extra={"vendors": names},
+        )
+
     def request_partial_award(
         self,
         line_id: str,
@@ -1027,6 +1175,7 @@ class RFxPipeline:
             names = {**{v.vendor_id: v.name for v in self.rfx.vendors}, **names}
         entry = {
             "request_id": req_id,
+            "kind": "partial",
             "line_id": line_id,
             "vendor_id": vendor_id,
             "vendor_name": names.get(vendor_id, cand.get("name") or vendor_id),
@@ -1038,6 +1187,7 @@ class RFxPipeline:
             "requested_at": self._now_iso(),
             "resolved_at": "",
             "provisional": True,
+            "suggested_vendor_id": str((self.suggested_awards or {}).get(line_id) or ""),
         }
         self.partial_requests.append(entry)
         gap_txt = "; ".join(entry["gaps"][:3]) if entry["gaps"] else "partial qualification"
@@ -1047,6 +1197,10 @@ class RFxPipeline:
             actor="buyer",
             persist=False,
         )
+        try:
+            self._notify_manager_approval_needed(entry)
+        except Exception:
+            pass
         self.wizard_step = "award"
         self._persist()
         return entry
@@ -1285,30 +1439,97 @@ class RFxPipeline:
             raise RuntimeError("Compare quotes before awarding.")
         if self.is_frozen:
             raise RuntimeError("Award is frozen — unfreeze before editing.")
-        # Approved partials may be submitted even though vendor is not fully eligible.
+        # Ensure we have a system baseline to detect overrides against.
+        if not self.suggested_awards:
+            try:
+                baseline = suggest_split_award(
+                    self.comparison,
+                    qualifications=self.qualified_vendor_ids(),
+                    rfx=self.rfx,
+                )
+                base_map: dict[str, str] = {}
+                for row in baseline.get("awards") or []:
+                    lid = str(row.get("line_id") or "")
+                    vid = str(row.get("vendor_id") or "")
+                    if lid and vid:
+                        base_map[lid] = vid
+                self.suggested_awards = base_map
+            except Exception:
+                self.suggested_awards = dict(self.awards or {})
+
         approved_map = {
             str(r.get("line_id")): str(r.get("vendor_id"))
             for r in self.partial_requests
             if r.get("status") == "approved" and r.get("line_id") and r.get("vendor_id")
         }
-        # Split: fully-eligible awards vs approved-partial lines
+        qual = set(self.qualified_vendor_ids())
+        names = dict(self.comparison.vendor_names or {})
+        names = {**{v.vendor_id: v.name for v in self.rfx.vendors}, **names}
+        price_map = {
+            (c.line_id, c.vendor_id): c.unit_price_inr for c in self.comparison.cells
+        }
+
         firm_input: dict[str, str] = {}
         partial_keep: dict[str, str] = {}
-        qual = set(self.qualified_vendor_ids())
-        for lid, vid in (awards or {}).items():
-            lid, vid = str(lid), str(vid)
-            if not lid or not vid:
-                continue
-            if vid in qual:
-                firm_input[lid] = vid
-            elif approved_map.get(lid) == vid:
-                partial_keep[lid] = vid
-            elif lid in approved_map and approved_map[lid] != vid:
-                # Buyer reassigned away from approved partial — drop that approval link
-                firm_input[lid] = vid  # may still be rejected by validate if not qual
+        override_created: list[dict[str, Any]] = []
+
+        submitted = {str(k): str(v) for k, v in (awards or {}).items() if k and v}
+
+        for lid, vid in submitted.items():
+            suggested = str((self.suggested_awards or {}).get(lid) or "")
+            is_override = bool(suggested and vid != suggested)
+
+            if vid not in qual:
+                # Non-Pass: only keep if already manager-approved partial
+                if approved_map.get(lid) == vid:
+                    partial_keep[lid] = vid
+                else:
+                    # Do not silently firm a Fail vendor — buyer should use partial request
+                    continue
+            elif is_override:
+                # Pass→Pass (or any Pass) change from auto-suggest → provisional override
+                # Drop superseded pending for this line
+                kept: list[dict[str, Any]] = []
+                for req in self.partial_requests:
+                    if req.get("line_id") == lid and req.get("status") == "pending":
+                        continue
+                    kept.append(req)
+                self.partial_requests = kept
+                req_id = f"OV-{uuid.uuid4().hex[:8].upper()}"
+                entry = {
+                    "request_id": req_id,
+                    "kind": "override",
+                    "line_id": lid,
+                    "vendor_id": vid,
+                    "vendor_name": names.get(vid, vid),
+                    "unit_price_inr": price_map.get((lid, vid)),
+                    "gaps": [
+                        f"Buyer override from suggested {suggested} → {vid}",
+                    ],
+                    "buyer_note": f"Override auto-suggested award ({suggested} → {vid})",
+                    "status": "pending",
+                    "manager_comment": "",
+                    "requested_at": self._now_iso(),
+                    "resolved_at": "",
+                    "provisional": True,
+                    "suggested_vendor_id": suggested,
+                }
+                self.partial_requests.append(entry)
+                override_created.append(entry)
+                self.append_review_log(
+                    "award_override_requested",
+                    f"{req_id} · {lid} · {suggested} → {vid}",
+                    actor="buyer",
+                    persist=False,
+                )
+                try:
+                    self._notify_manager_approval_needed(entry)
+                except Exception:
+                    pass
+                # Line stays provisional — not in firm awards
             else:
-                # Not eligible and not approved — let validate reject
                 firm_input[lid] = vid
+
         result = validate_award(
             self.comparison,
             qualifications=self.qualified_vendor_ids(),
@@ -1321,11 +1542,19 @@ class RFxPipeline:
             vid = str(row.get("vendor_id") or "")
             if lid and vid:
                 cleaned[lid] = vid
-        # Re-apply approved partials the buyer still wants
         for lid, vid in partial_keep.items():
             cleaned[lid] = vid
-        # If buyer cleared a line that had approved partial (not in awards), drop from cleaned
-        # (already absent). Mark those requests as superseded? leave history as approved.
+
+        # Do not carry firm awards for lines with a pending override/partial
+        pending_lines = {
+            str(r.get("line_id"))
+            for r in self.partial_requests
+            if r.get("status") == "pending"
+        }
+        for lid in list(cleaned.keys()):
+            if lid in pending_lines:
+                cleaned.pop(lid, None)
+
         self.awards = cleaned
         self.award_validation = result
         self.step = "awarded"
@@ -1334,11 +1563,14 @@ class RFxPipeline:
         total = (result.get("totals") or {}).get("grand_total_inr") or (
             result.get("totals") or {}
         ).get("grand_total_partial_inr") or 0.0
-        # Add partial approved extended values roughly
         if self.rfx:
             for lid, vid in partial_keep.items():
                 for req in self.partial_requests:
-                    if req.get("line_id") == lid and req.get("vendor_id") == vid and req.get("status") == "approved":
+                    if (
+                        req.get("line_id") == lid
+                        and req.get("vendor_id") == vid
+                        and req.get("status") == "approved"
+                    ):
                         qty = 1.0
                         for li in self.rfx.line_items:
                             if li.line_id == lid:
@@ -1346,12 +1578,18 @@ class RFxPipeline:
                                 break
                         total = float(total) + float(req.get("unit_price_inr") or 0) * qty
                         break
+        detail = f"{n} line(s) · ₹{float(total):.2f}"
+        if override_created:
+            detail += f" · {len(override_created)} override(s) pending manager"
         self.append_review_log(
             "award_saved",
-            f"{n} line(s) · ₹{float(total):.2f}",
+            detail,
+            actor="buyer",
             persist=False,
         )
         self._persist()
+        result = dict(result or {})
+        result["_overrides_pending"] = override_created
         return result
 
     def suggest_awards(self) -> dict[str, Any]:
@@ -1371,6 +1609,7 @@ class RFxPipeline:
             if lid and vid:
                 cleaned[lid] = vid
         self.awards = cleaned
+        self.suggested_awards = dict(cleaned)
         self.award_validation = result
         self.step = "awarded"
         self.wizard_step = "award"
@@ -1956,17 +2195,22 @@ class RFxPipeline:
         return None
 
     def notify_awarded_vendors(self) -> list[str]:
-        """Stub-write award_notice_*.txt into data/outbox; surface full emails on Outbox."""
+        """Stub-write award_notice_*.txt for firm awards only; manager summary notice."""
         if not self.rfx:
             raise RuntimeError("No RFx loaded.")
-        if not self.awards:
-            raise RuntimeError("Save awards before sending notices.")
+        firm = self.firm_awards_map()
+        if not firm:
+            raise RuntimeError(
+                "No fully confirmed (firm) awards to notify. "
+                "Pending partial/override lines are excluded until approved."
+            )
         lines = None
         if self.award_validation:
-            lines = self.award_validation.get("awards")
+            # Filter validation rows to firm lines only
+            raw = list(self.award_validation.get("awards") or [])
+            lines = [row for row in raw if str(row.get("line_id") or "") in firm]
         agent = VendorDispatcherAgent(stub=True, outbox_dir=OUTBOX_DIR)
-        paths = agent.write_award_notices(self.rfx, self.awards, lines=lines)
-        # Agent.dispatch_log holds full award_notice rows (to/subject/body_preview).
+        paths = agent.write_award_notices(self.rfx, firm, lines=lines)
         records = [dict(r) for r in (agent.dispatch_log or []) if r.get("kind") == "award_notice"]
         for r in records:
             r["status"] = "stub_sent"
@@ -1974,7 +2218,7 @@ class RFxPipeline:
             r.setdefault("file", Path(str(r.get("path") or "")).name)
         self.award_notice_paths = [str(p) for p in paths]
         self.award_log = records
-        # Replace prior award_notice rows on Outbox log, keep RFQ invites.
+        # Replace prior award_notice rows on Outbox log; keep RFQ + manager notices.
         kept: list[dict[str, Any]] = []
         for row in self.dispatch_log or []:
             kind = str(row.get("kind") or "")
@@ -1985,10 +2229,21 @@ class RFxPipeline:
             kept.append(row)
         kept.extend(records)
         self.dispatch_log = kept
+        vendor_names = [
+            str(r.get("vendor_name") or r.get("vendor_id") or "")
+            for r in records
+        ]
+        vendor_names = [n for n in vendor_names if n]
+        try:
+            mgr = self._notify_manager_awards_sent(vendor_names)
+            # _notify appends to dispatch_log; already on self.dispatch_log
+            _ = mgr
+        except Exception:
+            pass
         names = ", ".join(Path(p).name for p in self.award_notice_paths) or "(none)"
         self.append_review_log(
             "award_notices_sent",
-            f"{len(self.award_notice_paths)} notice(s) stub_sent: {names}",
+            f"{len(self.award_notice_paths)} notice(s) stub_sent (firm only): {names}",
             persist=False,
         )
         self._persist()
@@ -2016,6 +2271,7 @@ class RFxPipeline:
             "freeze": self.freeze,
             "review_log": list(self.review_log or []),
             "partial_requests": list(self.partial_requests or []),
+            "suggested_awards": dict(self.suggested_awards or {}),
         }
 
     def load_snapshot(self, data: dict[str, Any]) -> None:
@@ -2050,6 +2306,9 @@ class RFxPipeline:
         self.freeze = data.get("freeze") or None
         self.review_log = list(data.get("review_log") or [])
         self.partial_requests = list(data.get("partial_requests") or [])
+        self.suggested_awards = {
+            str(k): str(v) for k, v in dict(data.get("suggested_awards") or {}).items() if k and v
+        }
 
     def _persist(self) -> None:
         """Write snapshot to local STORE_DIR (best effort) and Blob when configured.

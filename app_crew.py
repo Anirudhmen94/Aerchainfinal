@@ -296,7 +296,14 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
             award_gaps = {}
             eligibility_reasons_by_line = {}
 
-    # Partial award candidates + request status (manager approval workflow)
+    # Auto-populate Award with cheapest Pass split when empty (buyer can override).
+    try:
+        if pipe.comparison and not pipe.is_frozen:
+            pipe.ensure_auto_awards()
+    except Exception:
+        pass
+
+    # Partial / override candidates + request status (manager notified via outbox)
     partial_by_line: dict[str, list[dict]] = {}
     partial_status_by_line: dict[str, dict] = {}
     if pipe.rfx and pipe.comparison:
@@ -348,6 +355,9 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "partial_status_by_line": partial_status_by_line,
         "pending_partials": pending_partials,
         "all_partials": all_partials,
+        "suggested_awards": dict(getattr(pipe, "suggested_awards", None) or {}),
+        "manager_notice_flash": False,
+        "award_notices_just_sent": False,
         "inbox_emails": inbox_email_cards(pipe),
     }
 
@@ -526,6 +536,8 @@ def crew_wizard(request: Request, rfx_id: str, step: Optional[str] = None):
     filt = (request.query_params.get("filter") or "").strip().lower()
     if filt in ("award", "award_notice"):
         filt = "award_notice"
+    elif filt in ("manager", "mgr", "manager_approval"):
+        filt = "manager"
     elif filt not in ("", "all", "rfq"):
         filt = ""
     ctx["outbox_filter"] = filt
@@ -533,6 +545,12 @@ def crew_wizard(request: Request, rfx_id: str, step: Optional[str] = None):
         ctx["notices_just_sent"] = int(request.query_params.get("notices") or 0)
     except ValueError:
         ctx["notices_just_sent"] = 0
+    flash = (request.query_params.get("mgr_notice") or "").strip()
+    ctx["manager_notice_flash"] = flash in ("1", "true", "yes", "partial", "override")
+    ctx["award_notices_just_sent"] = bool(ctx["notices_just_sent"]) and (
+        (request.query_params.get("step") or pipe.wizard_step or "") == "award"
+        or (request.query_params.get("award_sent") or "") in ("1", "true")
+    )
     return _render(request, "crew/wizard.html", **ctx)
 
 
@@ -891,9 +909,13 @@ async def crew_award_save(request: Request, rfx_id: str):
         if vid:
             awards[li.line_id] = vid
     try:
-        pipe.save_awards(awards)
+        result = pipe.save_awards(awards)
         _save(pipe)
-        return RedirectResponse(f"/crew/{rfx_id}/wizard?step=award", status_code=303)
+        overrides = (result or {}).get("_overrides_pending") or []
+        q = "step=award"
+        if overrides:
+            q += "&mgr_notice=1"
+        return RedirectResponse(f"/crew/{rfx_id}/wizard?{q}", status_code=303)
     except Exception as exc:
         log.exception("award save failed")
         return _err_html(str(exc), status=400)
@@ -925,7 +947,10 @@ async def crew_award_partial_request(request: Request, rfx_id: str):
     try:
         pipe.request_partial_award(line_id, vendor_id, note)
         _save(pipe)
-        return RedirectResponse(f"/crew/{rfx_id}/wizard?step=award", status_code=303)
+        return RedirectResponse(
+            f"/crew/{rfx_id}/wizard?step=award&mgr_notice=1",
+            status_code=303,
+        )
     except Exception as exc:
         log.exception("partial request failed")
         return _err_html(str(exc), status=400)
@@ -1082,7 +1107,7 @@ def crew_award_notify(request: Request, rfx_id: str):
         paths = pipe.notify_awarded_vendors()
         _save(pipe)
         return RedirectResponse(
-            f"/crew/{rfx_id}/wizard?step=send&filter=award&notices={len(paths)}",
+            f"/crew/{rfx_id}/wizard?step=award&award_sent=1&notices={len(paths)}",
             status_code=303,
         )
     except Exception as exc:

@@ -126,7 +126,7 @@
 <section class="card space-y-4">
   <div class="tip-banner no-print" data-tip-key="outbox" role="note">
     <span class="tip-icon" aria-hidden="true">i</span>
-    <div class="tip-body"><strong>Outbox.</strong> Preview cover emails, then <em>Send to vendors</em> (stub → <code>data/outbox/</code>). Award notices from the Award tab also land here (filter Type → Award notice). Next: <strong>Inbox</strong>.</div>
+    <div class="tip-body"><strong>Outbox.</strong> Preview cover emails, then <em>Send to vendors</em> (stub → <code>data/outbox/</code>). Award notices and manager approval stubs from Award also land here (Type → Award notice / Manager). Next: <strong>Inbox</strong>.</div>
     <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
   </div>
   <div>
@@ -188,10 +188,11 @@
         <option value="{{ v.vendor_id|lower }}">{{ v.vendor_id }} — {{ v.name }}</option>
         {% endfor %}
       </select>
-      <select data-filter-type title="RFQ invites vs award notices" aria-label="Type">
-        <option value="all" {% if outbox_filter not in ('rfq', 'award_notice') %}selected{% endif %}>All types</option>
+      <select data-filter-type title="RFQ invites vs award notices vs manager" aria-label="Type">
+        <option value="all" {% if outbox_filter not in ('rfq', 'award_notice', 'manager') %}selected{% endif %}>All types</option>
         <option value="rfq" {% if outbox_filter == 'rfq' %}selected{% endif %}>RFQ</option>
         <option value="award_notice" {% if outbox_filter == 'award_notice' %}selected{% endif %}>Award notice</option>
+        <option value="manager" {% if outbox_filter == 'manager' %}selected{% endif %}>Manager</option>
       </select>
       <span class="filter-count" data-filter-count></span>
     </div>
@@ -206,13 +207,14 @@
           {% set kind = row.kind or '' %}
           {% set subj = row.subject or '' %}
           {% set path_s = (row.path or row.file or '')|string|lower %}
-          {% set is_award = (kind == 'award_notice') or ('award notice' in subj|lower) or ('award_notice' in path_s) %}
-          {% set row_type = 'award_notice' if is_award else 'rfq' %}
+          {% set is_mgr = (kind == 'manager') or ('manager_' in path_s) or ('[manager' in subj|lower) or ('[awards sent]' in subj|lower) %}
+          {% set is_award = (not is_mgr) and ((kind == 'award_notice') or ('award notice' in subj|lower) or ('award_notice' in path_s)) %}
+          {% set row_type = 'manager' if is_mgr else ('award_notice' if is_award else 'rfq') %}
           <tr data-filter-row
               data-vendor="{{ (row.vendor_id or '')|lower }}"
               data-type="{{ row_type }}"
               data-search="{{ row.vendor_name or '' }} {{ row.vendor_id or '' }} {{ row.to or row.email or '' }} {{ subj }} {{ row.path or row.file or '' }}">
-            <td>{% if row_type == 'award_notice' %}<span class="chip chip-info">Award notice</span>{% else %}<span class="chip">RFQ</span>{% endif %}</td>
+            <td>{% if row_type == 'award_notice' %}<span class="chip chip-info">Award notice</span>{% elif row_type == 'manager' %}<span class="chip chip-warn">Manager</span>{% else %}<span class="chip">RFQ</span>{% endif %}</td>
             <td>{{ row.vendor_name or row.vendor_id }}</td>
             <td class="text-slate-600">{{ row.to or row.email or '—' }}</td>
             <td class="max-w-xs truncate" title="{{ subj }}">{{ subj or '—' }}</td>
@@ -823,7 +825,7 @@
 <section class="card space-y-4">
   <div class="tip-banner no-print" data-tip-key="award" role="note">
     <span class="tip-icon" aria-hidden="true">i</span>
-    <div class="tip-body"><strong>Award.</strong> Assign Pass vendors, Freeze when ready, then <em>Send award notices (stub)</em> — emails appear on the <strong>Outbox</strong> tab (Type → Award notice). Export CSV/Excel stay available after send. Next: <strong>Audit</strong>.</div>
+    <div class="tip-body"><strong>Award.</strong> Lines auto-fill with the cheapest Pass split — override any dropdown (manager gets a stub notification; no Approve/Reject on this tab). Freeze when firm, then <em>Send award notices</em> only to confirmed vendors. Manager + vendor stubs land on <strong>Outbox</strong>. Next: <strong>Audit</strong>.</div>
     <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
   </div>
   <div class="flex flex-wrap items-start justify-between gap-3">
@@ -971,11 +973,11 @@
                 <div class="font-medium">{{ li.line_id }}</div>
                 <div class="text-slate-500 truncate">{{ li.description }}</div>
                 {% if is_pending %}
-                <span class="chip chip-warn mt-1" title="Provisional — not counted in freeze until approved">Pending manager approval</span>
+                <span class="chip chip-warn mt-1" title="Provisional — notification sent to manager; not firm until approved">Awaiting manager approval — notification sent</span>
                 {% elif is_partial_approved %}
-                <span class="chip chip-ok mt-1" title="Manager approved partial award">Approved (partial)</span>
+                <span class="chip chip-ok mt-1" title="Manager approved">Approved{% if pst.kind == 'override' %} (override){% else %} (partial){% endif %}</span>
                 {% elif pst and pst.status == 'rejected' %}
-                <span class="chip chip-bad mt-1" title="{{ pst.manager_comment or '' }}">Rejected (partial)</span>
+                <span class="chip chip-bad mt-1" title="{{ pst.manager_comment or '' }}">Rejected{% if pst.kind == 'override' %} (override){% else %} (partial){% endif %}</span>
                 {% endif %}
               </td>
               <td class="text-right tabular-nums">{{ li.qty }}</td>
@@ -991,15 +993,20 @@
                   {% endfor %}
                   {% if is_partial_approved %}
                   <option value="{{ pst.vendor_id }}" selected>
-                    {{ pst.vendor_name or pst.vendor_id }} — ₹{{ '%.2f'|format(pst.unit_price_inr or 0) }} (partial ✓)
+                    {{ pst.vendor_name or pst.vendor_id }} — ₹{{ '%.2f'|format(pst.unit_price_inr or 0) }} ({% if pst.kind == 'override' %}override{% else %}partial{% endif %} ✓)
+                  </option>
+                  {% elif is_pending and pst.vendor_id %}
+                  <option value="{{ pst.vendor_id }}" selected>
+                    {{ pst.vendor_name or pst.vendor_id }}{% if pst.unit_price_inr is not none %} — ₹{{ '%.2f'|format(pst.unit_price_inr) }}{% endif %} (pending)
                   </option>
                   {% endif %}
                 </select>
                 {% if is_pending %}
                 <div class="text-[10px] text-amber-800 mt-0.5">
-                  Requested: {{ pst.vendor_name or pst.vendor_id }}
+                  {% if pst.kind == 'override' %}Override{% else %}Requested{% endif %}:
+                  {{ pst.vendor_name or pst.vendor_id }}
                   {% if pst.unit_price_inr is not none %} · ₹{{ '%.2f'|format(pst.unit_price_inr) }}{% endif %}
-                  — awaiting manager
+                  — notification sent to manager
                 </div>
                 {% elif not elig and not is_partial_approved %}
                 <div class="text-[10px] text-rose-600 mt-0.5">
@@ -1016,7 +1023,7 @@
                 <details class="mt-1.5 text-xs border border-amber-200 rounded-md bg-amber-50/60 px-2 py-1.5">
                   <summary class="cursor-pointer font-medium text-amber-950">
                     Request partial award
-                    <span class="tip-q" tabindex="0" role="img" aria-label="Tip: for vendors who failed knockouts but have a price" data-tip="Use when a Fail / incomplete vendor has a price you still want — manager must approve before freeze.">?</span>
+                    <span class="tip-q" tabindex="0" role="img" aria-label="Tip: for vendors who failed knockouts but have a price" data-tip="Use when a Fail / incomplete vendor has a price you still want — submits a manager notification (stub); stays provisional until approved off this tab.">?</span>
                   </summary>
                   <form method="post" action="/crew/{{ rfx.rfx_id }}/award/partial/request" class="mt-2 space-y-1.5">
                     <input type="hidden" name="line_id" value="{{ li.line_id }}" />
@@ -1037,7 +1044,7 @@
                                 class="mt-0.5 w-full rounded border border-slate-300 text-xs px-2 py-1"
                                 placeholder="Why award despite gaps? (required)"></textarea>
                     </label>
-                    <button class="btn-sec text-xs py-1" type="submit" title="Submit for manager approval — does not freeze yet">Submit for approval</button>
+                    <button class="btn-sec text-xs py-1" type="submit" title="Notify manager (stub) — stays provisional">Submit — notify manager</button>
                   </form>
                 </details>
                 {% endif %}
@@ -1064,73 +1071,21 @@
     {% endif %}
   </div>
 
-  {# Manager approval (stub demo roles) #}
-  <div class="rounded-lg border border-slate-200 bg-white p-4 space-y-3 no-print">
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <div>
-        <div class="font-medium text-sm">Manager approval
-          <span class="tip-q" tabindex="0" role="img" aria-label="Tip: stub role — Approve/Reject as manager" data-tip="Demo stub: no SSO. Buyer requests partial awards; use Approve/Reject here as manager. Pending items block Freeze.">?</span>
-        </div>
-        <p class="text-xs text-slate-500">Partial awards for non-Pass vendors stay provisional until approved.</p>
-      </div>
-      <span class="chip {% if pending_partials %}chip-warn{% else %}chip{% endif %}">{{ pending_partials|length if pending_partials else 0 }} pending</span>
-    </div>
-
-    {% if pending_partials %}
-    <ul class="space-y-3">
-      {% for req in pending_partials %}
-      <li class="rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-sm">
-        <div class="flex flex-wrap gap-2 items-baseline">
-          <span class="chip chip-warn">Pending</span>
-          <strong>{{ req.line_id }}</strong>
-          <span>→ {{ req.vendor_name or req.vendor_id }}</span>
-          {% if req.unit_price_inr is not none %}
-          <span class="tabular-nums text-slate-600">₹{{ '%.2f'|format(req.unit_price_inr) }}</span>
-          {% endif %}
-          <span class="text-xs text-slate-400">{{ req.request_id }}</span>
-        </div>
-        {% if req.gaps %}
-        <div class="mt-1 text-xs text-amber-950"><span class="font-medium">Gaps:</span> {{ req.gaps|join(' · ') }}</div>
-        {% endif %}
-        <div class="mt-1 text-xs text-slate-700"><span class="font-medium">Buyer note:</span> {{ req.buyer_note }}</div>
-        <div class="text-[10px] text-slate-400 mt-0.5">Requested {{ req.requested_at[:19].replace('T',' ') if req.requested_at else '' }} UTC</div>
-        <div class="mt-2 flex flex-wrap gap-2 items-end">
-          <form method="post" action="/crew/{{ rfx.rfx_id }}/award/partial/approve" class="flex flex-wrap gap-2 items-end">
-            <input type="hidden" name="request_id" value="{{ req.request_id }}" />
-            <label class="text-[10px] text-slate-600">Manager comment (optional)
-              <input name="manager_comment" class="mt-0.5 block rounded border border-slate-300 px-2 py-1 text-xs min-w-[12rem]" placeholder="e.g. accept with CAPA" />
-            </label>
-            <button class="btn text-xs py-1" type="submit" title="Act as manager — approve into firm awards">Approve</button>
-          </form>
-          <form method="post" action="/crew/{{ rfx.rfx_id }}/award/partial/reject" class="flex flex-wrap gap-2 items-end">
-            <input type="hidden" name="request_id" value="{{ req.request_id }}" />
-            <label class="text-[10px] text-slate-600">Reject reason (optional)
-              <input name="manager_comment" class="mt-0.5 block rounded border border-slate-300 px-2 py-1 text-xs min-w-[12rem]" placeholder="e.g. KO non-negotiable" />
-            </label>
-            <button class="btn-sec text-xs py-1" type="submit" title="Act as manager — reject request">Reject</button>
-          </form>
-        </div>
-      </li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <p class="text-xs text-slate-500">No pending partial-award requests. Use <em>Request partial award</em> on a line when a Fail vendor still has a price.</p>
-    {% endif %}
-
-    {% if all_partials %}
-    <details class="text-xs">
-      <summary class="cursor-pointer text-slate-600">All partial requests ({{ all_partials|length }})</summary>
-      <ul class="mt-2 space-y-1 text-slate-600">
-        {% for req in all_partials|reverse %}
-        <li>
-          <span class="chip {% if req.status == 'approved' %}chip-ok{% elif req.status == 'rejected' %}chip-bad{% else %}chip-warn{% endif %}">{{ req.status }}</span>
-          {{ req.line_id }} → {{ req.vendor_id }} · {{ req.request_id }}
-        </li>
-        {% endfor %}
-      </ul>
-    </details>
-    {% endif %}
+  {% if manager_notice_flash %}
+  <div class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 no-print" role="status">
+    <div class="font-medium">Notification sent to your manager for approval</div>
+    <p class="text-xs mt-1 text-amber-900/80">
+      Stub email written to Outbox (Type → Manager). This line stays provisional until approved behind the scenes —
+      Approve/Reject is not shown on Award. Freeze stays blocked while any request is pending.
+    </p>
+    <a class="underline text-xs" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=manager">Open Outbox (Manager) →</a>
   </div>
+  {% elif pending_partials %}
+  <div class="rounded-md border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs text-amber-950 no-print">
+    <span class="chip chip-warn">{{ pending_partials|length }} awaiting manager</span>
+    Notification(s) already stub-sent — no Approve/Reject UI on this tab.
+  </div>
+  {% endif %}
 
   {% if pipe.awards %}
   <div class="rounded-lg border border-indigo-200 bg-white p-4 space-y-2 no-print">
@@ -1184,18 +1139,40 @@
   {% endif %}
   {% endif %}
 
-  {% if pipe.awards %}
+  {% if award_notices_just_sent and award_log %}
+  <div id="award-sent-dialog" class="sad-dialog-backdrop no-print" role="dialog" aria-modal="true" aria-labelledby="award-sent-title" style="background:rgba(15,23,42,.45)">
+    <div class="sad-dialog" style="max-width:36rem;max-height:85vh;overflow:auto">
+      <h3 id="award-sent-title" style="color:#065f46">Award notices sent</h3>
+      <p>Success — stub emails were written for <strong>fully confirmed</strong> vendors only. Pending partial/override vendors were not emailed. Your manager also received a summary notice in Outbox.</p>
+      <ul>
+        {% for em in award_log %}
+        <li>
+          <strong>{{ em.vendor_name or em.vendor_id }}</strong>
+          — {{ em.to or '—' }} · {{ em.subject or 'Award notice' }}
+        </li>
+        {% endfor %}
+      </ul>
+      <div class="actions">
+        <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=award">Outbox (Award notice)</a>
+        <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=manager">Outbox (Manager)</a>
+        <button type="button" class="btn" onclick="document.getElementById('award-sent-dialog').style.display='none'">Got it</button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if pipe.awards or award_log %}
   <div class="rounded-lg border border-slate-200 bg-white p-4 space-y-3 no-print">
     <div class="font-medium text-sm">Notify awarded vendors (stub SMTP)</div>
-    <p class="text-xs text-slate-500">After freeze (optional), send award notices. Emails go to vendors as stub files under <code>data/outbox/</code> — no real SMTP. They also appear on the <strong>Outbox</strong> tab (Type: Award notice).</p>
+    <p class="text-xs text-slate-500">Sends stub award emails only to <strong>fully confirmed</strong> (Pass / firm) vendors — not pending partial or override lines. Manager gets a summary stub too. Files under <code>data/outbox/</code>.</p>
     <form method="post" action="/crew/{{ rfx.rfx_id }}/award/notify" class="flex flex-wrap items-center gap-2">
-      <button class="btn" type="submit" title="Stub-write award notices and open Outbox">Send award notices (stub)</button>
+      <button class="btn" type="submit" title="Stub-write firm award notices">Send award notices (stub)</button>
       <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=award">Open Outbox (award) →</a>
     </form>
     {% if award_log %}
     <div class="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-950 space-y-3" id="emails-sent-panel">
-      <div class="font-medium">Emails sent ({{ award_log|length }}) · status <code>stub_sent</code></div>
-      <p class="text-xs text-emerald-900/80">Each row is the stub email that would go to that vendor. Open Outbox to filter by Award notice.</p>
+      <div class="font-medium">Emails sent to fully confirmed vendors ({{ award_log|length }}) · status <code>stub_sent</code></div>
+      <p class="text-xs text-emerald-900/80">Success notification for confirmed awards. Open Outbox for Award notice or Manager filters.</p>
       <ul class="space-y-3">
         {% for em in award_log %}
         <li class="rounded border border-emerald-200 bg-white p-3 text-slate-800">
