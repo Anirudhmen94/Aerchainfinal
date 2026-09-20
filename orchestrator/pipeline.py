@@ -43,7 +43,7 @@ STORE_DIR = ROOT / "data" / "store"
 OUTBOX_DIR = ROOT / "data" / "outbox"
 INBOX_DIR = ROOT / "data" / "inbox"
 
-WIZARD_STEPS = ["draft", "send", "inbox", "compare", "ask", "award"]
+WIZARD_STEPS = ["draft", "send", "inbox", "compare", "ask", "award", "audit"]
 
 _STRUCTURED = {".json", ".csv"}
 
@@ -835,8 +835,9 @@ class RFxPipeline:
             "send": bool(self.dispatch_log),
             "inbox": bool(self.quotes),
             "compare": bool(self.comparison),
-            "ask": bool(self.chat) or self.wizard_step in ("ask", "award"),
+            "ask": bool(self.chat) or self.wizard_step in ("ask", "award", "audit"),
             "award": bool(self.awards),
+            "audit": bool(self.review_log),
         }
 
     def unlocked_steps(self) -> list[str]:

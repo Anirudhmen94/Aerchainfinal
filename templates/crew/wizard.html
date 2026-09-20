@@ -1,7 +1,7 @@
 {% extends "crew/base.html" %}
 {% block title %}{{ rfx.title }} · Workspace{% endblock %}
 {% block content %}
-{% set labels = {"draft":"Draft","send":"Send","inbox":"Inbox","compare":"Compare","ask":"Ask","award":"Award"} %}
+{% set labels = {"draft":"Draft","send":"Send","inbox":"Inbox","compare":"Compare","ask":"Ask","award":"Award","audit":"Audit"} %}
 
 <div class="mb-6 no-print">
   <div class="text-xs text-slate-500">{{ rfx.rfx_id }}</div>
@@ -566,23 +566,6 @@
 
   <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=ask">Open Ask →</a>
   {% endif %}
-  {% if review_log %}
-  <div class="rounded-lg border border-slate-200 bg-white no-print">
-    <div class="px-4 py-2 border-b border-slate-200 font-medium text-sm">Review log <span class="chip">{{ review_log|length }}</span></div>
-    <ul class="divide-y divide-slate-100 text-xs max-h-40 overflow-auto">
-      {% for e in review_log|reverse %}
-      {% if loop.index <= 8 %}
-      <li class="px-4 py-1.5">
-        <span class="text-slate-500">{{ e.time[:16].replace('T',' ') }}</span>
-        · <span class="chip chip-info">{{ e.action }}</span>
-        {% if e.detail %}<span class="text-slate-600">{{ e.detail }}</span>{% endif %}
-      </li>
-      {% endif %}
-      {% endfor %}
-    </ul>
-  </div>
-  {% endif %}
-
   <div class="flex flex-wrap gap-2">
     <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=inbox">← Inbox</a>
     <form method="post" action="/crew/{{ rfx.rfx_id }}/compare/continue">
@@ -890,30 +873,48 @@
   </div>
   {% endif %}
 
-  <div class="rounded-lg border border-slate-200 bg-white no-print">
-    <div class="px-4 py-3 border-b border-slate-200 font-medium text-sm flex items-center justify-between">
-      <span>Review log</span>
+  <a class="btn-sec no-print" href="/crew/{{ rfx.rfx_id }}/wizard?step=ask">← Ask</a>
+  <a class="btn-sec no-print" href="/crew/{{ rfx.rfx_id }}/wizard?step=audit">Open Audit →</a>
+</section>
+{% endif %}
+
+{# ═══════════════ AUDIT ═══════════════ #}
+{% if step == "audit" %}
+<section class="card space-y-4">
+  <div>
+    <h2 class="font-medium text-lg">Audit log</h2>
+    <p class="text-sm text-slate-600">Append-only history of award saves, freeze/unfreeze, stub notices, and cell overrides. Kept separate from Award so the decision screen stays clean.</p>
+  </div>
+
+  {% if review_log %}
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <div class="px-4 py-3 border-b border-slate-200 font-medium text-sm flex items-center justify-between bg-slate-50">
+      <span>All events</span>
       <span class="chip">{{ review_log|length }}</span>
     </div>
-    {% if review_log %}
-    <ul class="divide-y divide-slate-100 text-xs max-h-56 overflow-auto">
+    <ul class="divide-y divide-slate-100 text-sm max-h-[32rem] overflow-auto">
       {% for e in review_log|reverse %}
-      <li class="px-4 py-2">
+      <li class="px-4 py-3">
         <div class="flex flex-wrap gap-2 items-baseline">
-          <span class="text-slate-500 tabular-nums">{{ e.time[:19].replace('T',' ') }} UTC</span>
+          <span class="text-slate-500 tabular-nums text-xs">{{ e.time[:19].replace('T',' ') }} UTC</span>
           <span class="chip chip-info">{{ e.action }}</span>
-          <span class="text-slate-400">{{ e.actor or 'buyer' }}</span>
+          <span class="text-slate-400 text-xs">{{ e.actor or 'buyer' }}</span>
         </div>
-        {% if e.detail %}<div class="text-slate-700 mt-0.5">{{ e.detail }}</div>{% endif %}
+        {% if e.detail %}<div class="text-slate-800 mt-1 text-sm">{{ e.detail }}</div>{% endif %}
       </li>
       {% endfor %}
     </ul>
-    {% else %}
-    <p class="px-4 py-3 text-xs text-slate-500">No events yet — save, freeze, unfreeze, notices, or cell overrides appear here.</p>
-    {% endif %}
   </div>
+  {% else %}
+  <div class="empty-hint">
+    No audit events yet. Saving awards, freezing, sending stub notices, or overriding a cell from Compare evidence will appear here.
+  </div>
+  {% endif %}
 
-  <a class="btn-sec no-print" href="/crew/{{ rfx.rfx_id }}/wizard?step=ask">← Ask</a>
+  <div class="flex flex-wrap gap-2">
+    <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=award">← Award</a>
+    <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">Compare</a>
+  </div>
 </section>
 {% endif %}
 
