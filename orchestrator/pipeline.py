@@ -2317,9 +2317,9 @@ class RFxPipeline:
         pipeline JSON (quotes, comparison, awards, inbox metadata, dispatch_log)
         is also written via core.storage.save_state so cold starts can reload.
 
-        When running on Vercel with Blob configured, a Blob failure is re-raised
-        so callers do not silently succeed on /tmp-only (which vanishes on the
-        next cold start).
+        When running on Vercel with Blob configured, a Blob failure with no local
+        write is re-raised. If /tmp succeeded, we log loudly and continue so the
+        browser localStorage rehydrate path can cover the next cold start.
         """
         if not self.rfx:
             return
@@ -2368,10 +2368,21 @@ class RFxPipeline:
             os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
         )
         if blob_wanted and not blob_ok and on_vercel and blob_exc is not None:
-            raise RuntimeError(
-                f"Blob persist failed for {self.rfx.rfx_id} on Vercel "
-                f"(local /tmp alone is not durable across cold starts): {blob_exc}"
-            ) from blob_exc
+            # Durable Blob failed. If we have no local copy either, fail hard.
+            # If /tmp wrote successfully, keep going so the browser can cache
+            # session.json and POST /crew/rehydrate after the next cold start
+            # (Blob may be suspended/flaky; demos must still survive).
+            if not local_ok:
+                raise RuntimeError(
+                    f"Blob persist failed for {self.rfx.rfx_id} on Vercel "
+                    f"and local store also failed: {blob_exc}"
+                ) from blob_exc
+            logging.getLogger(__name__).error(
+                "Blob persist failed for %s on Vercel (%s); "
+                "instance-local /tmp only — cold start needs browser rehydrate",
+                self.rfx.rfx_id,
+                blob_exc,
+            )
 
         if not local_ok and not blob_ok and last_err:
             raise last_err

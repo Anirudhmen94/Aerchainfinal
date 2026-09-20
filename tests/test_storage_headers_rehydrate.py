@@ -61,7 +61,8 @@ def test_encrypted_envelope_token_rejected(monkeypatch):
     assert storage.blob_configured() is False
 
 
-def test_persist_reraises_blob_failure_on_vercel(tmp_path, monkeypatch):
+def test_persist_allows_local_when_blob_fails_on_vercel(tmp_path, monkeypatch):
+    """Blob flaky/suspended: still write /tmp so browser can cache session.json."""
     monkeypatch.setenv("VERCEL", "1")
     monkeypatch.setenv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_store_fake")
     store = tmp_path / "crew-store"
@@ -69,14 +70,40 @@ def test_persist_reraises_blob_failure_on_vercel(tmp_path, monkeypatch):
     monkeypatch.setattr("orchestrator.pipeline.STORE_DIR", store)
 
     def boom(rfx_id: str, state: dict) -> None:
-        raise RuntimeError("403 Forbidden: Cannot get store id from token or header")
+        raise RuntimeError("store_suspended")
 
     monkeypatch.setattr(storage, "save_state", boom)
     monkeypatch.setattr(storage, "blob_configured", lambda: True)
     monkeypatch.setattr(storage, "backend_name", lambda: "vercel-blob")
 
     pipe = RFxPipeline()
-    pipe.rfx = _minimal_rfx("RFX-BLOB-FAIL")
+    pipe.rfx = _minimal_rfx("RFX-BLOB-SOFT")
+    pipe._persist()  # must not raise
+    assert (store / "RFX-BLOB-SOFT.json").exists()
+
+
+def test_persist_reraises_when_blob_and_local_fail(tmp_path, monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setenv("BLOB_READ_WRITE_TOKEN", "vercel_blob_rw_store_fake")
+    store = tmp_path / "crew-store"
+    store.mkdir()
+    monkeypatch.setattr("orchestrator.pipeline.STORE_DIR", store)
+
+    def boom_save(rfx_id: str, state: dict) -> None:
+        raise RuntimeError("403 store_suspended")
+
+    monkeypatch.setattr(storage, "save_state", boom_save)
+    monkeypatch.setattr(storage, "blob_configured", lambda: True)
+    monkeypatch.setattr(storage, "backend_name", lambda: "vercel-blob")
+
+    pipe = RFxPipeline()
+    pipe.rfx = _minimal_rfx("RFX-BOTH-FAIL")
+
+    def bad_write_text(self, *a, **k):
+        raise OSError("read-only")
+
+    monkeypatch.setattr(Path, "write_text", bad_write_text)
+
     with pytest.raises(RuntimeError, match="Blob persist failed"):
         pipe._persist()
 
