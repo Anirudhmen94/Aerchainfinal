@@ -317,13 +317,14 @@
     <p class="section-muted">Receive stub replies, parse into structured quotes. Cards stay aligned with Compare after Parse.</p>
   </div>
 
-  <div class="flex flex-wrap gap-2">
+  <div class="flex flex-wrap gap-2 items-center">
     <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/seed">
       <button class="btn-sec" type="submit" title="Copy sample vendor response files into this event's inbox">Seed stub replies</button>
     </form>
     <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/parse-all">
-      <button class="btn" type="submit" {% if not pipe.inbox %}disabled{% endif %} title="Extract lines + questionnaire answers from every inbox message">Parse all</button>
+      <button class="btn" type="submit" {% if not pipe.inbox %}disabled{% endif %} title="Primary demo action: extract lines + questionnaire answers from every inbox message">Parse all</button>
     </form>
+    <span class="text-xs text-slate-500">Demo tip: use <strong>Parse all</strong> (single Parse is optional).</span>
   </div>
 
   <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/upload" enctype="multipart/form-data" class="flex flex-wrap gap-2 items-center text-sm">
@@ -402,7 +403,7 @@
           <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/parse" class="inline">
             <input type="hidden" name="msg_id" value="{{ em.msg_id }}" />
             <input type="hidden" name="filename" value="{{ em.filename or em.path or '' }}" />
-            <button class="btn-sec text-xs py-1" type="submit" title="Parse this message only">Parse</button>
+            <button class="btn-sec text-xs py-1" type="submit" title="Secondary: parse this message only (prefer Parse all above)">Parse one</button>
           </form>
         </div>
         {% endif %}
@@ -481,7 +482,7 @@
               <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/parse">
                 <input type="hidden" name="msg_id" value="{{ m.msg_id }}" />
               <input type="hidden" name="filename" value="{{ m.filename or m.path or '' }}" />
-                <button class="btn-sec text-xs py-1" type="submit" title="Parse this message only">Parse</button>
+                <button class="btn-sec text-xs py-1" type="submit" title="Secondary: parse this message only (prefer Parse all above)">Parse one</button>
               </form>
               {% endif %}
             </td>

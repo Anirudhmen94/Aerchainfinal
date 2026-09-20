@@ -637,6 +637,8 @@ class RFxPipeline:
             name = Path(msg.path).name if msg.path else ""
             if name and name in by_name:
                 msg.path = str(by_name[name])
+                if not getattr(msg, "filename", None):
+                    msg.filename = name
                 continue
             vid = (msg.vendor_id or "").lower()
             if not vid:
@@ -646,6 +648,8 @@ class RFxPipeline:
                     continue
                 if vid in fname.lower() or vid.replace("0", "") in fname.lower():
                     msg.path = str(fpath)
+                    if not getattr(msg, "filename", None):
+                        msg.filename = fname
                     break
 
     def seed_inbox(self, *, force: bool = False) -> list[InboxMessage]:
@@ -688,6 +692,7 @@ class RFxPipeline:
                     subject=f"Re: RFx {self.rfx.rfx_id} — quotation",
                     from_addr=vendor.email if vendor else f"quotes@{path.stem.lower()}.example",
                     path=str(path),
+                    filename=path.name,
                     body_preview=preview.replace("\n", " ")[:240],
                     status="new",
                 )
@@ -718,6 +723,7 @@ class RFxPipeline:
             subject=f"Upload — {dest.name}",
             from_addr=vendor.email if vendor else "upload@local",
             path=str(dest),
+            filename=dest.name,
             body_preview=preview.replace("\n", " "),
             status="new",
         )
@@ -807,7 +813,8 @@ class RFxPipeline:
             except Exception as exc:  # noqa: BLE001
                 msg.status = "error"
                 msg.error = str(exc)
-                errors.append(f"{msg.filename or msg.msg_id}: {exc}")
+                label = getattr(msg, "filename", None) or Path(getattr(msg, "path", "") or "").name or msg.msg_id
+                errors.append(f"{label}: {exc}")
         if not quotes and errors:
             raise RuntimeError("; ".join(errors[:3]))
         self.quotes = quotes

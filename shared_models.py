@@ -65,6 +65,7 @@ class InboxMessage(BaseModel):
     subject: str = ""
     from_addr: str = ""
     path: str = ""
+    filename: str = ""  # basename; kept for Parse form fallback + error labels
     body_preview: str = ""
     status: Literal["new", "parsed", "error"] = "new"
     error: str = ""
