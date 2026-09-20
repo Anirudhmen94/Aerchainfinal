@@ -430,6 +430,7 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "qual_map": qual_map,
         "award_summary": pipe.award_summary() if pipe.awards or pipe.award_validation else None,
         "snapshot": pipe.snapshot(),
+        "session_snap_json": json.dumps(pipe.snapshot(), default=str),
         "evidence_by_vendor": evidence_by_vendor,
         "vendor_sources": vendor_sources,
         "suggested_questions": suggested_questions,
@@ -601,7 +602,42 @@ def home(request: Request):
         "testing, capacity, lead time to first delivery, moisture/contamination control, and "
         "snacks-customer references (3–4 of these must be knockouts)."
     )
-    return _render(request, "crew/index.html", events=events, example_brief=example)
+    storage_warn = None
+    try:
+        from core import storage as _storage
+
+        health = _storage.storage_healthcheck()
+        blob_err = str(health.get("blob_error") or health.get("error") or "")
+        blob_suspended = (
+            health.get("blob_status") == "store_suspended"
+            or "store_suspended" in blob_err.lower()
+        )
+        # Only warn when Blob is configured but not usable (Vercel cold-start risk).
+        if health.get("blob_configured") and not health.get("blob_ok"):
+            storage_warn = {
+                "kind": "blob_suspended" if blob_suspended else "blob_degraded",
+                "message": (
+                    "Vercel Blob store is suspended — sessions will not survive cold starts on Vercel. "
+                    "Prefer the durable demo link (Cloudflare tunnel → local disk), or keep this browser "
+                    "tab open so localStorage can rehydrate."
+                    if blob_suspended
+                    else (
+                        "Vercel Blob is not writable — cold starts may drop sessions. "
+                        "Prefer the durable demo link, or rely on browser localStorage rehydrate."
+                    )
+                ),
+                "durable_hint": True,
+                "detail": blob_err or health.get("backend") or "",
+            }
+    except Exception as exc:
+        log.warning("home storage probe failed: %s", exc)
+    return _render(
+        request,
+        "crew/index.html",
+        events=events,
+        example_brief=example,
+        storage_warn=storage_warn,
+    )
 
 
 # ── Start / e2e ────────────────────────────────────────────────────────

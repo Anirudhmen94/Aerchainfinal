@@ -1,7 +1,19 @@
 {% extends "crew/base.html" %}
 {% block title %}Start · RFx Crew{% endblock %}
 {% block content %}
-<div id="quick-start" class="mb-6 tip-banner" data-tip-key="home" role="note">
+{% if storage_warn %}
+<div id="storage-warn" class="mb-4 rounded-lg border border-amber-300 bg-amber-50 text-amber-950 px-4 py-3 text-sm" role="alert">
+  <strong class="font-semibold">Storage warning.</strong>
+  {{ storage_warn.message }}
+  {% if storage_warn.durable_hint %}
+  <div class="mt-1 text-xs opacity-90">
+    Optional: use the durable demo link (Cloudflare tunnel) when presenting — it writes to local disk under <code>/workspace</code>.
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+<div id="quick-start"
+ class="mb-6 tip-banner" data-tip-key="home" role="note">
   <span class="tip-icon" aria-hidden="true">i</span>
   <div class="tip-body">
     <strong>Happy path.</strong> Click <em>Open workspace</em> and walk the tabs:

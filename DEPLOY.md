@@ -27,3 +27,15 @@ uvicorn app_crew:app --host 0.0.0.0 --port 8518
 
 Ephemeral serverless state: prefer `data/store/` snapshots or attach Blob later;
 the demo UI also keeps an in-process session map for warm instances.
+
+## Storage note (Sep 2026)
+
+Production Blob (`BLOB_READ_WRITE_TOKEN`) currently returns **`store_suspended`** —
+`/healthz/storage` shows `blob_ok=false`, `write_ok` only for warm `/tmp`.
+
+Until a fresh `vercel_blob_rw_*` token / unsuspended store is configured:
+
+- Prefer the **durable demo** (Cloudflare tunnel → local uvicorn on `:8518` writing under `/workspace`).
+- On Vercel, client backup is **embedded** `window.__AERCHAIN_SNAP__` / `#aerchain-snap` → `localStorage` key `aerchain.rfx.{id}` → `POST /crew/rehydrate` on cold 404.
+- Home page shows a storage warning banner when Blob is configured but not writable.
+

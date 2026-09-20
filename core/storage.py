@@ -326,6 +326,7 @@ def storage_healthcheck() -> dict[str, Any]:
             result["blob_error"] = blob_err
             if "store_suspended" in str(exc):
                 result["blob_status"] = "store_suspended"
+                result["store_suspended"] = True
 
     # 2) Local /tmp (or data/store) roundtrip — warm-instance durability only
     token_was = os.environ.get("BLOB_READ_WRITE_TOKEN")
