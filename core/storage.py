@@ -22,7 +22,20 @@ import httpx
 
 BLOB_API = os.environ.get("VERCEL_BLOB_API_URL", "https://vercel.com/api/blob")
 BLOB_API_VERSION = "12"
-LOCAL_ROOT = Path(os.environ.get("LOCAL_STORE_DIR", "data/store"))
+
+
+def _local_store_root() -> Path:
+    if os.environ.get("LOCAL_STORE_DIR"):
+        return Path(os.environ["LOCAL_STORE_DIR"])
+    override = os.environ.get("AERCHAIN_DATA_ROOT", "").strip()
+    if override:
+        return Path(override) / "store"
+    if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        return Path("/tmp/aerchain-data/store")
+    return Path("data/store")
+
+
+LOCAL_ROOT = _local_store_root()
 
 
 def _token() -> str | None:

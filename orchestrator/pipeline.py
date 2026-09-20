@@ -6,6 +6,7 @@ Navigation is free — wizard_step is the last-open tab, not a lock gate.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
@@ -38,10 +39,30 @@ from shared_models import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _writable_data_root() -> Path:
+    """Repo data/ locally; /tmp on Vercel (deployment FS is read-only)."""
+    override = os.environ.get("AERCHAIN_DATA_ROOT", "").strip()
+    if override:
+        root = Path(override)
+    elif os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        root = Path("/tmp/aerchain-data")
+    else:
+        root = ROOT / "data"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+_DATA_ROOT = _writable_data_root()
+DATA_ROOT = _DATA_ROOT  # writable root (repo data/ or /tmp on Vercel)
+# Fixtures ship with the deploy (read-only OK on Vercel).
 VENDOR_DIR = ROOT / "data" / "vendor_responses"
-STORE_DIR = ROOT / "data" / "store"
-OUTBOX_DIR = ROOT / "data" / "outbox"
-INBOX_DIR = ROOT / "data" / "inbox"
+STORE_DIR = _DATA_ROOT / "store"
+OUTBOX_DIR = _DATA_ROOT / "outbox"
+INBOX_DIR = _DATA_ROOT / "inbox"
+for _d in (STORE_DIR, OUTBOX_DIR, INBOX_DIR):
+    _d.mkdir(parents=True, exist_ok=True)
 
 WIZARD_STEPS = ["draft", "send", "inbox", "compare", "ask", "award", "audit"]
 
@@ -1459,13 +1480,27 @@ class RFxPipeline:
         self.partial_requests = list(data.get("partial_requests") or [])
 
     def _persist(self) -> None:
+        """Write snapshot to STORE_DIR; fall back to /tmp on read-only FS."""
         if not self.rfx:
             return
-        STORE_DIR.mkdir(parents=True, exist_ok=True)
-        path = STORE_DIR / f"{self.rfx.rfx_id}.json"
-        path.write_text(
-            json.dumps(self.snapshot(), indent=2, default=str), encoding="utf-8"
-        )
+        payload = json.dumps(self.snapshot(), indent=2, default=str)
+        fallback = Path("/tmp/aerchain-data/store")
+        candidates: list[Path] = [STORE_DIR]
+        if fallback.resolve() != STORE_DIR.resolve():
+            candidates.append(fallback)
+        last_err: Optional[OSError] = None
+        for store in candidates:
+            try:
+                store.mkdir(parents=True, exist_ok=True)
+                (store / f"{self.rfx.rfx_id}.json").write_text(payload, encoding="utf-8")
+                return
+            except OSError as exc:
+                last_err = exc
+                logging.getLogger(__name__).warning(
+                    "persist to %s failed (%s); trying next store", store, exc
+                )
+        if last_err:
+            raise last_err
 
 
 def run_pipeline(
@@ -1477,8 +1512,24 @@ def run_pipeline(
 
 
 def load_pipeline(rfx_id: str) -> RFxPipeline:
-    path = STORE_DIR / f"{rfx_id}.json"
+    """Load from STORE_DIR, then /tmp fallback (serverless warm-instance persistence).
+
+    On Vercel/Lambda, STORE_DIR is under /tmp/aerchain-data so snapshots survive
+    for the warm instance after in-memory _SESSIONS are wiped on cold start.
+    """
     pipe = RFxPipeline()
-    if path.exists():
-        pipe.load_snapshot(json.loads(path.read_text(encoding="utf-8")))
+    fallback = Path("/tmp/aerchain-data/store") / f"{rfx_id}.json"
+    candidates = [STORE_DIR / f"{rfx_id}.json"]
+    if fallback not in candidates:
+        candidates.append(fallback)
+    for path in candidates:
+        try:
+            if path.exists():
+                pipe.load_snapshot(json.loads(path.read_text(encoding="utf-8")))
+                return pipe
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "load_pipeline(%s) from %s failed: %s", rfx_id, path, exc
+            )
+            continue
     return pipe

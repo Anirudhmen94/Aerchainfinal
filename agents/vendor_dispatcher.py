@@ -19,7 +19,25 @@ from typing import Any, Optional, Union
 from shared_models import LineItem, QuestionnaireItem, RFx, Vendor
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_DEFAULT_OUTBOX = _REPO_ROOT / "data" / "outbox"
+
+
+def _writable_outbox() -> Path:
+    """Prefer AERCHAIN_DATA_ROOT / serverless /tmp; else repo data/outbox.
+
+    Duplicated (not imported from pipeline) to avoid circular imports.
+    Pipeline always passes outbox_dir=OUTBOX_DIR; this is the safe default.
+    """
+    override = os.environ.get("AERCHAIN_DATA_ROOT", "").strip()
+    if override:
+        root = Path(override)
+    elif os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        root = Path("/tmp/aerchain-data")
+    else:
+        root = _REPO_ROOT / "data"
+    return root / "outbox"
+
+
+_DEFAULT_OUTBOX = _writable_outbox()
 
 RFxLike = Union[RFx, dict[str, Any]]
 VendorLike = Union[Vendor, dict[str, Any]]

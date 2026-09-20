@@ -1359,7 +1359,21 @@ class DocumentParserAgent:
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_VENDOR_DIR = REPO_ROOT / "data" / "vendor_responses"
-DEFAULT_INBOX_DIR = REPO_ROOT / "data" / "inbox"
+
+
+def _writable_inbox() -> Path:
+    """Writable inbox root (repo data/ or /tmp on Vercel). Avoids circular import."""
+    override = os.environ.get("AERCHAIN_DATA_ROOT", "").strip()
+    if override:
+        root = Path(override)
+    elif os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        root = Path("/tmp/aerchain-data")
+    else:
+        root = REPO_ROOT / "data"
+    return root / "inbox"
+
+
+DEFAULT_INBOX_DIR = _writable_inbox()
 
 # Primary demo samples — assignment ugly edges (binary + one-line email).
 _PRIMARY_INBOX_SEED: list[tuple[str, str, str]] = [
