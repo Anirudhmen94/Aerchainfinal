@@ -1,39 +1,51 @@
-# Decisions: what I built, what I left out, and where the real problem is
+# One-page note — Kill the Quote Spreadsheet
 
-**One page · for the reviewer driving the live demo**  
-**Live:** https://kill-the-quote-spreadsheet-lac.vercel.app/  
-**Code:** https://github.com/Anirudhmen94/Aerchainfinal · entrypoint `app_crew:app`
+**What this is:** A short note for anyone reviewing the live demo.  
+**Live demo:** https://kill-the-quote-spreadsheet-lac.vercel.app/  
+**Code:** https://github.com/Anirudhmen94/Aerchainfinal
 
-## The bet
+---
 
-The spreadsheet does not die when extraction gets good enough. It dies when a buyer with serious money on the line trusts the screen more than their own retyping. This prototype optimises for **trust**, not format coverage. Three rules:
+## What we are doing (in one paragraph)
 
-1. **No value without evidence.** Prices and questionnaire answers must point at source. Compare opens a **source-of-truth** evidence drawer (snippet + original media). Ungrounded values become *uncertain* / *missing*, not silent numbers.
-2. **The model never does the arithmetic.** FX (demo **USD→INR 83.50**), UOM → INR/piece, cheapest-per-line, gated splits, and caveats run in Python. Ask calls helpers and explains; the tables are the source of truth.
-3. **Uncertainty is first-class.** Cells are `ok` · `converted` · `uncertain` · `uom_mismatch` · `missing`. Knockout-fail vendors get **XQ**, are dimmed, and stay off the award shortlist unless the buyer opens a partial/override path.
+Procurement buyers still spend days copying vendor quotes into Excel. They send an RFx to five suppliers and get back messy replies — Excel that ignores the template, a PDF with a discount buried in a footnote, a Word paragraph, a phone photo of a rate card, or a one-line email. Then a manager asks one “what if” question and another afternoon disappears.
 
-## Choices with no right answer (and why)
+**This prototype ends that week.** A buyer drafts the RFx with an AI co-pilot, vendors reply however they like, the system reads every format into one side-by-side comparison (same lines, same units, same currency), and the buyer asks questions in plain English through to an award decision they can defend.
 
-- **Corrugated packaging (Chakan snacks plant).** Real UOM pain (per kg / 100 / 1000 / box / USD). Demo: **5 vendors, 30 lines, 8 questionnaire items** (ISO / FSC / food-contact knockouts).
-- **Free tabs, not a locked wizard.** Draft | **Outbox** | Inbox | Compare | Ask | Award | **Audit**. Home is draft-only (**no E2E button**).
-- **Five ugly replies, not a portal.** Excel-off-template, PDF footnote discount (~27/30), Word USD/1000, angled photo, one-line email. Inbox stays **quote-aligned**.
-- **Outbox = outbound ledger.** Stub RFQ covers, **manager notify** for partial/override, award notices → `data/outbox/`. SMTP fake; artefacts real.
-- **Ask speaks human.** Senior-buyer tone over the normalized matrix; VP-defend + free-ask tool loop; no hardcoded answers.
-- **Audit + Blob cold-start.** Saves, notices, overrides append `review_log`. Snapshots dual-write local store + **Vercel Blob** for cold reload.
-- **Stub plumbing; AI loops real.** Draft + unstructured parse need `ANTHROPIC_API_KEY`; structured parse / normalize / offline analyst work once an RFx exists.
+**Demo size:** corrugated packaging for a Chakan snacks plant · **5 vendors · 30 line items · 8 quality questions**.
 
-## What you deliberately left out
+---
 
-- **No real SMTP/IMAP.** Outbound is stub **Outbox files** only (`data/outbox/`). Proves artefacts and filters without pretending mail infrastructure is the product.
-- **No Freeze / Unfreeze ceremony on Award.** Removed on purpose — award save + Audit log is enough for a demo; a freeze ritual added ceremony without trust.
-- **No vendor portal / forced template.** Vendors reply however they like; the system absorbs mess instead of pushing compliance UI onto suppliers.
-- **Manager notify-only — no Approve/Reject UI on Award.** Partial/override paths stub a manager notice in Outbox; the buyer owns the screen, not a fake approval workflow.
-- **No ERP / payments.** Scope stops at a defensible award decision, not P2P settlement.
-- **No multi-user RBAC.** Single-buyer demo; AuthN/AuthZ would dilute the ugly-edge story.
-- **No hardcoded Ask answers.** Free-ask must run on extracted data; canned replies would fail “don’t fake the reasoning.”
-- **No auto-applying footnote discounts into award totals.** Discounts stay visible as evidence/caveats; silent math into official totals would break trust.
-- **No Home one-click E2E.** Tabs stay free; the reviewer drives the real path, not a hidden autopilot button.
+## How the product works (walk the tabs)
 
-## Where the interesting problem actually is
+| Tab | What happens |
+|---|---|
+| **Draft** | Buyer describes the need in plain language → AI drafts ~30 lines + quality questionnaire + 5 vendors. |
+| **Outbox** | Preview cover emails → “send” writes stub files (no real email server). Later: award notices and manager alerts land here too. |
+| **Inbox** | Seed or upload the five ugly reply formats → Parse → structured quotes. |
+| **Compare** | One INR matrix for all vendors. Click a cell to see the **original source** (snippet + file). Unclear values are marked uncertain/missing — not hidden. |
+| **Ask** | Chat in normal English over the comparison (e.g. cheapest split among vendors who passed quality). Answers come from real extracted data, not canned scripts. |
+| **Award** | Pick a vendor per line → save. If you want a failing/incomplete vendor on a line, the system **notifies a manager** via Outbox (there is no fake Approve button). |
+| **Audit** | Log of saves, notices, and overrides — so decisions are reviewable. |
 
-Extraction is increasingly a commodity. The hard product problem is **row matching under ambiguity** and **decisions under partial data** — “same as last year”, 27/30 lines, incomplete knockouts. Honest UI: flags + buyer override with an audit trail. Next: a vendor “confirm these mappings” link that closes the loop without retyping into Excel.
+**Trust rules we built for:** every price should link back to evidence; math (FX, unit conversion, cheapest-line) runs in code, not in the AI; vendors who fail knockout questions are clearly flagged and kept off the default award list.
+
+---
+
+## What we deliberately left out (and why)
+
+- **Real email (SMTP/IMAP).** Outbox saves stub files only. We prove the messages and workflow without building a mail product.
+- **Freeze / Unfreeze on Award.** Removed on purpose. Saving the award + Audit is enough for a demo; a freeze ceremony added ceremony, not trust.
+- **Vendor portal or forced reply template.** Vendors stay free to reply in any format; our job is to absorb the mess.
+- **Approve / Reject UI for managers on Award.** Managers get a notify stub in Outbox only. The buyer owns the screen; we did not fake a full approval workflow.
+- **ERP, payments, purchase orders.** Scope stops at a defensible award decision.
+- **Multi-user login / permissions.** Single-buyer demo so the ugly-edge story stays center stage.
+- **Hardcoded answers in Ask.** Free questions must run on the extracted data — canned answers would break the assignment.
+- **Silently applying footnote discounts into award totals.** Discounts stay visible as caveats; quiet math into “official” totals would destroy trust.
+- **One-click “run everything” on Home.** The reviewer walks the real path tab by tab.
+
+---
+
+## Where we think the hard problem actually is
+
+Reading documents is getting easier. The hard product problem is **matching messy vendor lines to the right RFx rows** when data is partial (“same as last year”, only 27 of 30 lines quoted, incomplete quality answers). The honest product answer is clear flags, buyer override, and an audit trail — not a silent best guess. Next worth building: a short “confirm these mappings” link back to the vendor so nobody retypes Excel again.
