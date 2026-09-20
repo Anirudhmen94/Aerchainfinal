@@ -504,6 +504,37 @@ class AnalystAgent:
         )
         return self.ask(prompt)
 
+    def explain_award(
+        self,
+        awards: Optional[dict[str, str]] = None,
+        summary: Optional[dict[str, Any]] = None,
+    ) -> str:
+        """4–6 sentence defensible brief for the Award tab (colleague tone)."""
+        cheapest = self.cheapest_per_qualified()
+        totals = self.vendor_totals(qualified_only=True)
+        st = self._require_state()
+        total_spend = round(
+            sum(r.get("extended_inr") or 0 for r in cheapest if r.get("extended_inr") is not None),
+            2,
+        )
+        prompt = (
+            "Write a 4–6 sentence award brief I can hand a colleague — calm spoken English.\n"
+            "Cover: why this split (cheapest per line among Pass / questionnaire-cleared vendors); "
+            "who failed knockouts and is out; FX / UOM / freight watch-outs if present in the data; "
+            "and any risk lines (gaps, missing qty, thin coverage).\n"
+            "If CURRENT_AWARDS is empty, say honestly that nothing is assigned yet and describe "
+            "what the suggested cheapest-Pass split would look like from PRECOMPUTED data.\n"
+            "No emoji. No section headers. No marketing template. Short paragraphs only.\n\n"
+            f"CURRENT_AWARDS:\n{json.dumps(awards or {}, ensure_ascii=False, default=str)}\n\n"
+            f"AWARD_SUMMARY_BLURB:\n{json.dumps(summary or {}, ensure_ascii=False, default=str)}\n\n"
+            f"PRECOMPUTED_CHEAPEST_QUALIFIED:\n{json.dumps(cheapest, ensure_ascii=False, default=str)}\n\n"
+            f"PRECOMPUTED_VENDOR_TOTALS_QUALIFIED:\n{json.dumps(totals, ensure_ascii=False, default=str)}\n\n"
+            f"PRECOMPUTED_TOTAL_SPEND_INR: {total_spend}\n"
+            f"QUALIFIED_VENDOR_IDS: {st.get('qualified_vendors')}\n"
+            f"VENDOR_FLAGS: {json.dumps(st.get('vendor_flags') or {}, ensure_ascii=False)}\n"
+        )
+        return self.ask(prompt)
+
 
 def _extract_text(resp: Any) -> str:
     parts: list[str] = []
@@ -1059,6 +1090,99 @@ def validate_award(
         "markdown": md,
         "qualified_vendors": list(qualified),
     }
+
+
+
+def explain_award(
+    rfx: RFxLike = None,
+    comparison: ComparisonLike = None,
+    awards: Optional[dict[str, str]] = None,
+    summary: Optional[dict[str, Any]] = None,
+    history: Optional[list[Any]] = None,
+) -> dict[str, Any]:
+    """Award-tab brief: 4–6 sentences via Analyst (offline-safe)."""
+    if comparison is None:
+        return {
+            "answer": "No comparison matrix loaded — build Compare first.",
+            "markdown": "No comparison matrix loaded — build Compare first.",
+            "tool": "guard",
+            "caveats": ["comparison_missing"],
+            "model": None,
+            "history": history or [],
+        }
+    agent = AnalystAgent()
+    agent.load_comparison(comparison, rfx=rfx)
+    if history is not None:
+        agent.chat_history = _normalize_history(history)
+    seeded = list(agent.chat_history)
+    try:
+        text = agent.explain_award(awards=awards, summary=summary)
+        tool = "explain_award"
+        model = _model_name()
+    except RuntimeError as exc:
+        # Offline / no API key — deterministic short brief
+        st = agent.state or {}
+        cheapest = agent.cheapest_per_qualified() if agent.state else []
+        pass_ids = list(st.get("qualified_vendors") or [])
+        names = dict(st.get("vendor_names") or {})
+        n_lines = len(cheapest)
+        spend = round(
+            sum(r.get("extended_inr") or 0 for r in cheapest if r.get("extended_inr") is not None),
+            2,
+        )
+        by_name: dict[str, int] = {}
+        for r in cheapest:
+            vid = str(r.get("vendor_id") or "")
+            label = names.get(vid) or vid or "?"
+            by_name[label] = by_name.get(label, 0) + 1
+        split_bits = ", ".join(f"{n} · {c} lines" for n, c in sorted(by_name.items(), key=lambda x: -x[1]))
+        awards_n = len(awards or {})
+        if awards_n:
+            lead = (
+                f"Current assignment covers {awards_n} line(s) using Pass vendors only "
+                f"(cheapest per line among questionnaire-cleared suppliers)."
+            )
+        elif cheapest:
+            lead = (
+                f"Nothing firm yet — the suggested cheapest-Pass split would cover "
+                f"{n_lines} line(s) for about ₹{spend:,.2f}."
+            )
+        else:
+            lead = "No Pass / priced winners to recommend yet."
+        fail_note = (
+            f" Qualified set: {', '.join(names.get(v, v) for v in pass_ids) or 'none'}."
+            if pass_ids or True
+            else ""
+        )
+        fx = ""
+        if _has_usd_converted(st.get("cells") or []):
+            fx = f" Watch USD→INR at fixed rate {st.get('usd_rate')} and any freight-extra / UOM flags."
+        text = (
+            f"{lead} Split shape: {split_bits or 'n/a'}.{fail_note}"
+            f"{fx} Treat thin coverage and gap cells as risk lines before you send notices."
+        )
+        tool = "explain_award_offline"
+        model = None
+        # keep caveat soft
+        caveats_offline = [f"LLM unavailable: {exc}"]
+    else:
+        caveats_offline = []
+
+    agent.chat_history = list(seeded) + [
+        {"role": "user", "content": "Explain this award"},
+        {"role": "assistant", "content": text},
+    ]
+    out = {
+        "answer": text,
+        "markdown": text,
+        "tables": {},
+        "data": {"awards": awards or {}, "summary": summary or {}},
+        "caveats": caveats_offline,
+        "tool": tool,
+        "model": model,
+        "history": agent.chat_history,
+    }
+    return out
 
 
 def suggest_split_award(

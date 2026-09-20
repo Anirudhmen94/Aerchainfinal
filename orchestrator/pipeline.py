@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from agents.analyst import ask_question, suggest_split_award, validate_award
+from agents.analyst import ask_question, explain_award as analyst_explain_award, suggest_split_award, validate_award
 from agents.document_parser import (
     list_inbox,
     parse_all,
@@ -434,6 +434,7 @@ class RFxPipeline:
         self.review_log: list[dict[str, Any]] = []
         self.partial_requests: list[dict[str, Any]] = []
         self.suggested_awards: dict[str, str] = {}
+        self.award_explanation: Optional[str] = None
         self.step: str = "idle"
         self.wizard_step: str = "draft"
 
@@ -1730,6 +1731,254 @@ class RFxPipeline:
             },
         }
 
+
+    def recommended_split_blurb(self) -> dict[str, Any]:
+        """Plain-English payload for the Award 'Recommended split' banner (no fluff)."""
+        total_lines = len(self.rfx.line_items) if self.rfx else 0
+        pass_ids = set(self.qualified_vendor_ids())
+        empty = {
+            "sentence": "Cheapest per line among Pass vendors.",
+            "total_inr": 0.0,
+            "lines_awarded": 0,
+            "lines_total": total_lines,
+            "by_vendor": [],
+            "has_pass": bool(pass_ids),
+            "has_awards": bool(self.awards),
+        }
+        if not self.comparison or not self.rfx:
+            return empty
+        if not pass_ids:
+            empty["sentence"] = "No Pass vendors — nothing to recommend until knockouts clear."
+            return empty
+
+        summary = self.award_summary() if (self.awards or self.award_validation) else None
+        # Prefer live awards; fall back to suggested_awards / cheapest split preview
+        awards_map = dict(self.awards or {}) or dict(self.suggested_awards or {})
+        if not awards_map and not summary:
+            try:
+                preview = suggest_split_award(
+                    self.comparison,
+                    qualifications=self.qualified_vendor_ids(),
+                    rfx=self.rfx,
+                )
+                cleaned: dict[str, str] = {}
+                for row in preview.get("awards") or []:
+                    lid = str(row.get("line_id") or "")
+                    vid = str(row.get("vendor_id") or "")
+                    if lid and vid:
+                        cleaned[lid] = vid
+                awards_map = cleaned
+                totals = preview.get("totals") or {}
+                by_vendor_raw = totals.get("by_vendor") or {}
+                by_vendor = []
+                for vid, bucket in by_vendor_raw.items():
+                    if isinstance(bucket, dict):
+                        by_vendor.append(
+                            {
+                                "vendor_id": str(vid),
+                                "name": bucket.get("vendor_name")
+                                or bucket.get("name")
+                                or str(vid),
+                                "lines": int(bucket.get("lines") or 0),
+                                "extended_inr": float(
+                                    bucket.get("extended_inr")
+                                    or bucket.get("extended_partial_inr")
+                                    or 0
+                                ),
+                            }
+                        )
+                    else:
+                        by_vendor.append(
+                            {
+                                "vendor_id": str(vid),
+                                "name": str(vid),
+                                "lines": 0,
+                                "extended_inr": float(bucket or 0),
+                            }
+                        )
+                by_vendor.sort(key=lambda b: (-b["lines"], b["name"]))
+                return {
+                    "sentence": "Cheapest per line among Pass vendors.",
+                    "total_inr": float(
+                        totals.get("grand_total_inr")
+                        or totals.get("grand_total_partial_inr")
+                        or 0
+                    ),
+                    "lines_awarded": int(totals.get("lines_awarded") or len(awards_map)),
+                    "lines_total": total_lines,
+                    "by_vendor": by_vendor,
+                    "has_pass": True,
+                    "has_awards": False,
+                }
+            except Exception:
+                return empty
+
+        if summary:
+            by_vendor_raw = summary.get("by_vendor") or {}
+            total_inr = float(summary.get("total_inr") or 0)
+            lines_awarded = len(summary.get("lines") or awards_map)
+        else:
+            by_vendor_raw = {}
+            total_inr = 0.0
+            lines_awarded = len(awards_map)
+
+        # Rebuild by_vendor with line counts when summary fallback lacks them
+        names = {v.vendor_id: v.name for v in self.rfx.vendors}
+        if self.comparison:
+            names.update(self.comparison.vendor_names or {})
+        counts: dict[str, int] = {}
+        for lid, vid in awards_map.items():
+            if vid:
+                counts[str(vid)] = counts.get(str(vid), 0) + 1
+
+        by_vendor: list[dict[str, Any]] = []
+        if by_vendor_raw:
+            for vid, bucket in by_vendor_raw.items():
+                if isinstance(bucket, dict):
+                    by_vendor.append(
+                        {
+                            "vendor_id": str(vid),
+                            "name": bucket.get("name")
+                            or bucket.get("vendor_name")
+                            or names.get(str(vid), str(vid)),
+                            "lines": int(bucket.get("lines") or counts.get(str(vid), 0)),
+                            "extended_inr": float(
+                                bucket.get("extended_inr")
+                                or bucket.get("extended_partial_inr")
+                                or 0
+                            ),
+                        }
+                    )
+                else:
+                    by_vendor.append(
+                        {
+                            "vendor_id": str(vid),
+                            "name": names.get(str(vid), str(vid)),
+                            "lines": int(counts.get(str(vid), 0)),
+                            "extended_inr": float(bucket or 0),
+                        }
+                    )
+        else:
+            # Compute extended from cells
+            price_map = {
+                (c.line_id, c.vendor_id): c.unit_price_inr for c in self.comparison.cells
+            }
+            spend: dict[str, float] = {}
+            for line in self.rfx.line_items:
+                vid = awards_map.get(line.line_id, "")
+                if not vid:
+                    continue
+                unit = price_map.get((line.line_id, vid))
+                if unit is None:
+                    continue
+                spend[vid] = spend.get(vid, 0.0) + float(unit) * float(line.qty or 0)
+            total_inr = sum(spend.values())
+            for vid, n in counts.items():
+                by_vendor.append(
+                    {
+                        "vendor_id": vid,
+                        "name": names.get(vid, vid),
+                        "lines": n,
+                        "extended_inr": float(spend.get(vid, 0.0)),
+                    }
+                )
+
+        by_vendor.sort(key=lambda b: (-b["lines"], b["name"]))
+        lines_awarded = lines_awarded or sum(b["lines"] for b in by_vendor) or len(awards_map)
+        return {
+            "sentence": "Cheapest per line among Pass vendors.",
+            "total_inr": float(total_inr or 0),
+            "lines_awarded": int(lines_awarded),
+            "lines_total": total_lines,
+            "by_vendor": by_vendor,
+            "has_pass": True,
+            "has_awards": bool(self.awards),
+        }
+
+    def exception_lines(self) -> list[dict[str, Any]]:
+        """Lines for the Exceptions card: priced non-Pass candidates and/or pending requests."""
+        if not self.rfx or not self.comparison:
+            return []
+        out: list[dict[str, Any]] = []
+        for li in self.rfx.line_items:
+            lid = li.line_id
+            try:
+                partials = self.partial_candidates_for_line(lid)
+            except Exception:
+                partials = []
+            pst = self.partial_status_for_line(lid)
+            pending = bool(pst and pst.get("status") == "pending")
+            if not partials and not pending and not (
+                pst and pst.get("status") in ("approved", "rejected")
+            ):
+                # Only surface if there is something actionable or a live request status
+                continue
+            if not partials and not pst:
+                continue
+            # Skip lines with no partial candidates and no pending/recent request
+            if not partials and not pst:
+                continue
+            out.append(
+                {
+                    "line_id": lid,
+                    "description": li.description,
+                    "qty": li.qty,
+                    "partials": partials,
+                    "status": pst,
+                    "pending": pending,
+                }
+            )
+        # Prefer lines that still need action (have partials or pending)
+        actionable = [
+            row
+            for row in out
+            if row.get("pending") or (row.get("partials") and not (
+                row.get("status") and row["status"].get("status") == "approved"
+            ))
+        ]
+        return actionable if actionable else [
+            row for row in out if row.get("partials") or row.get("pending")
+        ]
+
+    def explain_award(self) -> str:
+        """Ask Analyst for a 4–6 sentence defensible award brief; persist on snapshot."""
+        if not self.comparison:
+            text = (
+                "No comparison matrix yet — open Compare and build it before I can "
+                "explain an award split."
+            )
+            self.award_explanation = text
+            self._persist()
+            return text
+        awards_map = dict(self.awards or {}) or dict(self.suggested_awards or {})
+        blurb = self.recommended_split_blurb()
+        result = analyst_explain_award(
+            self.rfx,
+            self.comparison,
+            awards=awards_map,
+            summary=blurb,
+            history=self.analyst_history,
+        )
+        text = (
+            (result.get("answer") if isinstance(result, dict) else None)
+            or (result.get("markdown") if isinstance(result, dict) else None)
+            or (str(result) if result else "")
+        ).strip()
+        if not text:
+            text = (
+                "I couldn't draft an explanation just now. "
+                "Try Suggest cheapest split first, then Explain again."
+            )
+        self.award_explanation = text
+        # Keep a light trail without polluting Ask chat heavily
+        self.append_review_log(
+            "award_explanation",
+            f"explain · {len(text)} chars",
+            persist=False,
+        )
+        self._persist()
+        return text
+
     # ── Wizard navigation ──────────────────────────────────────────────
 
     def export_award(self, fmt: str = "csv") -> bytes | str:
@@ -2328,6 +2577,7 @@ class RFxPipeline:
             "review_log": list(self.review_log or []),
             "partial_requests": list(self.partial_requests or []),
             "suggested_awards": dict(self.suggested_awards or {}),
+            "award_explanation": self.award_explanation,
         }
 
     def load_snapshot(self, data: dict[str, Any]) -> None:
@@ -2367,6 +2617,8 @@ class RFxPipeline:
         self.suggested_awards = {
             str(k): str(v) for k, v in dict(data.get("suggested_awards") or {}).items() if k and v
         }
+        expl = data.get("award_explanation")
+        self.award_explanation = str(expl).strip() if expl else None
 
     def _persist(self) -> None:
         """Write snapshot to local STORE_DIR (best effort) and Blob when configured.

@@ -417,6 +417,17 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
     ]
     all_partials = list(getattr(pipe, "partial_requests", None) or [])
 
+    # Award story helpers (Recommended split banner + Exceptions card)
+    try:
+        recommended_split = pipe.recommended_split_blurb() if pipe.comparison else None
+    except Exception:
+        recommended_split = None
+    try:
+        exception_lines = pipe.exception_lines() if pipe.comparison else []
+    except Exception:
+        exception_lines = []
+    award_explanation = getattr(pipe, "award_explanation", None) or None
+
     return {
         "pipe": pipe,
         "rfx": pipe.rfx,
@@ -458,6 +469,9 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "pending_partials": pending_partials,
         "all_partials": all_partials,
         "suggested_awards": dict(getattr(pipe, "suggested_awards", None) or {}),
+        "recommended_split": recommended_split,
+        "exception_lines": exception_lines,
+        "award_explanation": award_explanation,
         "manager_notice_flash": False,
         "award_notices_just_sent": False,
         "inbox_emails": inbox_email_cards(pipe),
@@ -1140,6 +1154,22 @@ def crew_award_suggest(rfx_id: str):
     _save(pipe)
     return RedirectResponse(f"/crew/{rfx_id}/wizard?step=award", status_code=303)
 
+
+
+
+@app.post("/crew/{rfx_id}/award/explain", response_class=HTMLResponse)
+def crew_award_explain(rfx_id: str):
+    """Analyst 4–6 sentence award brief; persists as award_explanation."""
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return _not_found_response(rfx_id)
+    try:
+        pipe.explain_award()
+        _save(pipe)
+    except Exception as exc:
+        log.exception("award explain failed")
+        return _err_html(str(exc), status=400)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=award", status_code=303)
 
 @app.post("/crew/{rfx_id}/award/partial/request", response_class=HTMLResponse)
 async def crew_award_partial_request(request: Request, rfx_id: str):
