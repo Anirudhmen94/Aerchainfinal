@@ -21,6 +21,7 @@ except Exception:
 try:
     from agents.document_parser import (
         DocumentParserAgent,
+        align_questionnaire_to_rfx,
         list_inbox,
         parse_all,
         parse_one,
@@ -45,6 +46,7 @@ try:
             "parse_all",
             "seed_inbox",
             "list_inbox",
+            "align_questionnaire_to_rfx",
             "DocumentParserAgent",
         ]
     )

@@ -583,6 +583,20 @@
   </div>
 
 
+  {% if award_gaps and award_gaps.global_banner %}
+  <div class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 no-print">
+    <div class="font-medium mb-1">Why Award is empty</div>
+    <p>{{ award_gaps.global_banner }}</p>
+    {% if award_gaps.summary %}<p class="mt-1 text-xs text-amber-900/80">{{ award_gaps.summary }}</p>{% endif %}
+    <p class="mt-1 text-xs"><a class="underline" href="/crew/{{ rfx.rfx_id }}/wizard?step=compare">Open Compare → questionnaire matrix</a></p>
+  </div>
+  {% elif award_gaps and award_gaps.summary and not shortlist_pass %}
+  <div class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 no-print">
+    <div class="font-medium mb-1">Why Award is empty</div>
+    <p>{{ award_gaps.summary }}</p>
+  </div>
+  {% endif %}
+
   {% if shortlist_pass or shortlist_fail %}
   <div class="mb-3 space-y-2 no-print">
     <div class="text-xs font-medium text-slate-600 uppercase tracking-wide">Shortlist (questionnaire Pass)</div>
@@ -645,7 +659,16 @@
                 </option>
                 {% endfor %}
               </select>
-              {% if not elig %}<div class="text-[10px] text-rose-600">No qualified priced vendor</div>{% endif %}
+              {% if not elig %}
+              <div class="text-[10px] text-rose-600 mt-0.5">
+                {% set gap_reasons = eligibility_reasons_by_line.get(li.line_id, []) if eligibility_reasons_by_line else [] %}
+                {% if gap_reasons %}
+                  {{ gap_reasons|join(' · ') }}
+                {% else %}
+                  No qualified priced vendor
+                {% endif %}
+              </div>
+              {% endif %}
             </td>
             <td class="text-right tabular-nums text-slate-500">
               {% for e in elig %}{% if e.vendor_id == current %}₹{{ '%.2f'|format(e.unit_price_inr) }}{% endif %}{% endfor %}

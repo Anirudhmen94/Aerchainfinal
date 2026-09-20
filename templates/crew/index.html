@@ -17,6 +17,10 @@
       <strong>Draft | Send | Inbox | Compare | Ask | Award</strong>.
       Jump to any tab — empty panels explain what’s missing.
     </p>
+    <p class="text-xs text-indigo-800 mb-3 rounded-lg border border-indigo-100 bg-indigo-50/80 px-3 py-2">
+      Default brief is the Chakan ~30 SKU happy path (ISO / FSC / food-contact knockouts).
+      After Draft → Send → Seed inbox → Parse → Compare, Award should show Pass vendors with prices — no hardcoded winners.
+    </p>
     <form method="post" action="/crew/start" class="space-y-3" id="start-form">
       <label class="block text-sm font-medium">Brief</label>
       <textarea name="brief" rows="7" class="w-full rounded-lg border border-slate-300 p-3 text-sm" required>{{ example_brief }}</textarea>

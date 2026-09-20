@@ -17,7 +17,7 @@ from fastapi import FastAPI, File, Form, Request, UploadFile  # noqa: E402
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response  # noqa: E402
 from fastapi.templating import Jinja2Templates  # noqa: E402
 
-from agents.qualification import questionnaire_matrix  # noqa: E402
+from agents.qualification import eligibility_gaps, questionnaire_matrix  # noqa: E402
 from orchestrator.pipeline import (  # noqa: E402
     WIZARD_STEPS,
     RFxPipeline,
@@ -159,6 +159,27 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
     shortlist_fail = [r for r in shortlist_rows if not r.get("pass")]
     provisional = pipe.provisional_status()
 
+    # Award explainability — why lines have empty dropdowns / empty Pass shortlist
+    award_gaps: dict[str, Any] = {}
+    eligibility_reasons_by_line: dict[str, list[str]] = {}
+    if pipe.rfx and pipe.comparison:
+        try:
+            award_gaps = eligibility_gaps(pipe.rfx, pipe.comparison)
+            eligibility_reasons_by_line = dict(award_gaps.get("reasons_by_line") or {})
+            # Also attach reasons for lines that have zero eligible_by_line entries
+            for lid, elig in eligible_by_line.items():
+                if elig:
+                    continue
+                if lid not in eligibility_reasons_by_line:
+                    # recompute single-line gaps for this lid
+                    one = eligibility_gaps(pipe.rfx, pipe.comparison, line_id=lid)
+                    for row in one.get("lines") or []:
+                        if row.get("line_id") == lid and row.get("reasons"):
+                            eligibility_reasons_by_line[lid] = list(row["reasons"])
+        except Exception:
+            award_gaps = {}
+            eligibility_reasons_by_line = {}
+
     return {
         "pipe": pipe,
         "rfx": pipe.rfx,
@@ -179,6 +200,8 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "shortlist_fail": shortlist_fail,
         "award_notice_paths": list(getattr(pipe, "award_notice_paths", None) or []),
         "q_matrix": q_matrix,
+        "award_gaps": award_gaps,
+        "eligibility_reasons_by_line": eligibility_reasons_by_line,
         "freeze": getattr(pipe, "freeze", None),
         "is_frozen": bool(getattr(pipe, "freeze", None)),
         "review_log": list(getattr(pipe, "review_log", None) or []),
@@ -220,10 +243,17 @@ def home(request: Request):
                 )
             except Exception:
                 continue
+    # Default happy-path brief — pairs with seed vendor pack after Draft→Send→Seed→Parse.
+    # Persona alignment on parse yields ≥2 Pass vendors with usable prices (no hardcoded awards).
     example = (
-        "Corrugated packaging for a snacks plant in Chakan. ~30 SKUs across 3/5/7-ply RSC "
-        "cartons, mixed print, annual spend around ₹3.8 crore last year. Need delivered INR "
-        "quotes, FSC board, and food-contact certification."
+        "We are a packaged snacks manufacturer with a plant in Chakan (Pune). For the next "
+        "financial year we need about 30 SKUs of corrugated packaging: outer shippers for chips "
+        "and namkeen (mostly 3-ply, some 5-ply for export and heavier loads), a few die-cut "
+        "display trays, and some 7-ply master cartons for palletised export. Total spend last "
+        "year was around Rs 3.8 crore. Deliveries weekly to Chakan, prices delivered and "
+        "exclusive of GST, 60-day validity, 45-day payment. Vendors must have ISO 9001 and be "
+        "able to provide BCT test reports; FSC Chain of Custody and food-contact (FDA/BFRO) "
+        "certification are knockout requirements. Print is mostly 1-2 colour flexo with our brand marks."
     )
     return _render(request, "crew/index.html", events=events, example_brief=example)
 

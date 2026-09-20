@@ -10,7 +10,7 @@ import re
 from typing import Any, Iterable
 
 from shared_models import ComparisonTable, ExtractedQuote, NormalizedCell
-from agents.qualification import award_eligible_vendors, build_questionnaire_results, qualify_vendors, questionnaire_matrix
+from agents.qualification import award_eligible_vendors, build_questionnaire_results, eligibility_gaps, qualify_vendors, questionnaire_matrix, remap_questionnaire_answers
 
 
 USD_TO_INR = 83.50
@@ -372,4 +372,4 @@ class NormalizerAgent:
 
 normalize_quotes = normalize
 
-__all__ = ["USD_TO_INR", "NormalizerAgent", "normalize", "normalize_quotes", "qualify_vendors", "award_eligible_vendors", "questionnaire_matrix", "build_questionnaire_results"]
+__all__ = ["USD_TO_INR", "NormalizerAgent", "normalize", "normalize_quotes", "qualify_vendors", "award_eligible_vendors", "questionnaire_matrix", "build_questionnaire_results", "eligibility_gaps", "remap_questionnaire_answers"]
