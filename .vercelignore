@@ -1,0 +1,11 @@
+.git
+__pycache__
+*.pyc
+.venv
+venv
+.env
+tests
+data/store
+data/outbox
+data/inbox
+data/rfx

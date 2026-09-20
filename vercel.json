@@ -1,15 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "builds": [
-    { "src": "app_crew.py", "use": "@vercel/python" }
-  ],
-  "routes": [
-    { "src": "/(.*)", "dest": "app_crew.py" }
-  ],
   "functions": {
-    "app_crew.py": {
+    "app.py": {
       "maxDuration": 300,
-      "memory": 2048
+      "memory": 2048,
+      "excludeFiles": "{uploads/**,terminals/**,data/store/**,data/outbox/**,data/inbox/**,data/rfx/**,tests/**,*.md,.git/**}"
     }
   }
 }
