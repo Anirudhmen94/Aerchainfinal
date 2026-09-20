@@ -924,12 +924,16 @@ def crew_inbox_seed(rfx_id: str):
 
 
 @app.post("/crew/{rfx_id}/inbox/parse", response_class=HTMLResponse)
-def crew_inbox_parse(rfx_id: str, msg_id: str = Form(...)):
+def crew_inbox_parse(
+    rfx_id: str,
+    msg_id: str = Form(...),
+    filename: str = Form(""),
+):
     pipe = _session(rfx_id)
     if not pipe.rfx:
         return _not_found_response(rfx_id)
     try:
-        pipe.parse_inbox_message(msg_id)
+        pipe.parse_inbox_message(msg_id, filename=filename)
         _save(pipe)
         return RedirectResponse(f"/crew/{rfx_id}/wizard?step=inbox", status_code=303)
     except Exception as exc:

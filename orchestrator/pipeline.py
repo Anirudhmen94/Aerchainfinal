@@ -5,6 +5,7 @@ Navigation is free — wizard_step is the last-open tab, not a lock gate.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -404,6 +405,12 @@ def write_inbox_reply_eml_files(pipe: "RFxPipeline") -> list[str]:
     return written
 
 
+
+def _stable_msg_id(path: Union[str, Path]) -> str:
+    """Deterministic id from filename so re-seed / reload keeps Parse buttons working."""
+    name = Path(path).name.lower()
+    return "msg-" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+
 class RFxPipeline:
     """In-memory crew session for one sourcing event (tab-aware)."""
 
@@ -675,7 +682,7 @@ class RFxPipeline:
                 preview = f"(file: {path.name})"
             messages.append(
                 InboxMessage(
-                    msg_id=f"msg-{uuid.uuid4().hex[:8]}",
+                    msg_id=_stable_msg_id(path),
                     vendor_id=vid,
                     vendor_name=vendor.name if vendor else path.stem,
                     subject=f"Re: RFx {self.rfx.rfx_id} — quotation",
@@ -705,7 +712,7 @@ class RFxPipeline:
         except Exception:
             preview = f"(uploaded: {dest.name})"
         msg = InboxMessage(
-            msg_id=f"msg-{uuid.uuid4().hex[:8]}",
+            msg_id=_stable_msg_id(dest),
             vendor_id=vendor_id,
             vendor_name=vendor.name if vendor else dest.stem,
             subject=f"Upload — {dest.name}",
@@ -718,13 +725,36 @@ class RFxPipeline:
         self._persist()
         return msg
 
-    def parse_inbox_message(self, msg_id: str) -> ExtractedQuote:
+    def parse_inbox_message(self, msg_id: str, *, filename: str = "") -> ExtractedQuote:
         if not self.rfx:
             raise RuntimeError("No RFx loaded.")
         self._ensure_inbox_files()
         msg = next((m for m in self.inbox if m.msg_id == msg_id), None)
+        if not msg and filename:
+            fname = Path(filename).name
+            msg = next(
+                (m for m in self.inbox if Path(m.path or "").name == fname),
+                None,
+            )
+        if not msg and msg_id:
+            # Stale UI after re-seed: map old id → same stable filename hash if present
+            msg = next((m for m in self.inbox if m.msg_id == msg_id), None)
         if not msg:
-            raise KeyError(f"Unknown inbox message {msg_id}")
+            # Last resort: if inbox empty, re-seed once then retry by filename/id
+            if not self.inbox:
+                self.seed_inbox(force=True)
+                msg = next((m for m in self.inbox if m.msg_id == msg_id), None)
+                if not msg and filename:
+                    fname = Path(filename).name
+                    msg = next(
+                        (m for m in self.inbox if Path(m.path or "").name == fname),
+                        None,
+                    )
+        if not msg:
+            known = ", ".join(m.msg_id for m in self.inbox[:8]) or "(empty inbox)"
+            raise KeyError(
+                f"Unknown inbox message {msg_id}. Refresh Inbox and try again. Known: {known}"
+            )
         try:
             quote = parse_one(msg.path, vendor_id=msg.vendor_id or "", rfx=self.rfx)
             if msg.vendor_id and (

@@ -401,6 +401,7 @@
         <div class="px-3 pb-3">
           <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/parse" class="inline">
             <input type="hidden" name="msg_id" value="{{ em.msg_id }}" />
+            <input type="hidden" name="filename" value="{{ em.filename or em.path or '' }}" />
             <button class="btn-sec text-xs py-1" type="submit" title="Parse this message only">Parse</button>
           </form>
         </div>
@@ -479,6 +480,7 @@
               {% if m.status != 'parsed' %}
               <form method="post" action="/crew/{{ rfx.rfx_id }}/inbox/parse">
                 <input type="hidden" name="msg_id" value="{{ m.msg_id }}" />
+              <input type="hidden" name="filename" value="{{ m.filename or m.path or '' }}" />
                 <button class="btn-sec text-xs py-1" type="submit" title="Parse this message only">Parse</button>
               </form>
               {% endif %}
