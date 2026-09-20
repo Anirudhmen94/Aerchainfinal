@@ -1,14 +1,18 @@
 {% extends "crew/base.html" %}
 {% block title %}{{ rfx.title }} · Workspace{% endblock %}
+{% block body_attrs %}data-rfx-id="{{ rfx.rfx_id }}"{% endblock %}
 {% block content %}
-<script>
-window.__AERCHAIN_SNAP__ = {{ snapshot | tojson }};
-</script>
+{# Embedded session snapshot for localStorage durability (do not rely only on fetch /session.json) #}
+<script type="application/json" id="aerchain-snap">{{ snapshot | tojson }}</script>
 <script>
 (function () {
   try {
+    var el = document.getElementById('aerchain-snap');
+    window.__AERCHAIN_SNAP__ = el ? JSON.parse(el.textContent || 'null') : null;
+  } catch (e) { window.__AERCHAIN_SNAP__ = null; }
+  try {
     var id = {{ (rfx.rfx_id if rfx else '') | tojson }};
-    if (id && String(id).indexOf('NaN') === -1) {
+    if (id && /^RFX-[A-Z0-9-]+$/i.test(String(id))) {
       document.body.setAttribute('data-rfx-id', id);
     }
   } catch (e) {}

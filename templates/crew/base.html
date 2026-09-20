@@ -148,7 +148,7 @@
     }
   </style>
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-screen">
+<body class="bg-slate-50 text-slate-900 min-h-screen" {% block body_attrs %}{% endblock %}>
   <header class="border-b border-slate-200 bg-white no-print">
     <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
       <a href="/" class="font-semibold tracking-tight">Aerchain <span class="text-indigo-600">RFx Crew</span></a>
@@ -311,8 +311,10 @@
 
     function sanitizeRfxId(raw) {
       var s = String(raw == null ? '' : raw);
+      // Strip JS NaN/undefined concatenation junk then keep RFX token only
       s = s.replace(/(NaN|undefined|null)+$/gi, '');
-      var m = s.match(/^(RFX-[A-Za-z0-9_-]+)/);
+      s = s.replace(/[^A-Za-z0-9_-]+/g, ''); // strip non-id chars around token
+      var m = s.match(/^(RFX-[A-Z0-9-]+)/i);
       return m ? m[1] : '';
     }
 
@@ -342,20 +344,38 @@
       try { return localStorage.getItem(lsKey(id)); } catch (e) { return null; }
     }
 
+    function readEmbeddedSnap() {
+      try {
+        if (window.__AERCHAIN_SNAP__ && typeof window.__AERCHAIN_SNAP__ === 'object') {
+          return window.__AERCHAIN_SNAP__;
+        }
+      } catch (e) {}
+      try {
+        var el = document.getElementById('aerchain-snap');
+        if (el && el.textContent) {
+          var parsed = JSON.parse(el.textContent);
+          window.__AERCHAIN_SNAP__ = parsed;
+          return parsed;
+        }
+      } catch (e) {}
+      return null;
+    }
+
     function cacheSessionSnapshot() {
       var id = currentRfxId();
       if (!id || id === 'rehydrate') return;
       document.body.setAttribute('data-rfx-id', id);
 
-      // Prefer embedded snapshot (first paint, no extra roundtrip)
+      // Prefer embedded snapshot (first paint, no extra roundtrip / cold-instance miss)
       try {
-        if (window.__AERCHAIN_SNAP__ && typeof window.__AERCHAIN_SNAP__ === 'object') {
-          var embedded = window.__AERCHAIN_SNAP__;
+        var embedded = readEmbeddedSnap();
+        if (embedded && typeof embedded === 'object') {
           var eid = sanitizeRfxId((embedded.rfx && embedded.rfx.rfx_id) || id);
           if (eid) saveSnapToLocalStorage(eid, embedded);
         }
       } catch (e) {}
 
+      // Best-effort refresh from server; never clear LS on failure
       fetch('/crew/' + encodeURIComponent(id) + '/session.json', {
         credentials: 'same-origin',
         headers: { 'Accept': 'application/json' }
@@ -398,7 +418,9 @@
       });
     };
 
-    // Before form POST / HTMX that needs server state: rehydrate if cold
+    // Before form POST / HTMX that needs server state: rehydrate if cold.
+    // Always flush embedded snap to LS first so a 404 not-found HTML response
+    // can still rehydrate — never clear LS on failed POSTs.
     document.addEventListener('submit', function (ev) {
       var form = ev.target;
       if (!form || !form.action) return;
@@ -407,15 +429,21 @@
       if (form.dataset.aerchainReady === '1') return;
       // Only intercept crew mutation posts
       if (String(form.action).indexOf('/crew/') === -1) return;
+      try { cacheSessionSnapshot(); } catch (e) {}
       ev.preventDefault();
-      window.__aerchainEnsureSession(id).then(function (ok) {
+      window.__aerchainEnsureSession(id).then(function () {
         form.dataset.aerchainReady = '1';
-        // Re-save snap after ensure
-        cacheSessionSnapshot();
+        try { cacheSessionSnapshot(); } catch (e) {}
         if (typeof form.requestSubmit === 'function') form.requestSubmit();
         else form.submit();
       });
     }, true);
+
+    // If the browser landed on the session-missing page via a full form POST,
+    // LS is already intact; nothing to strip. Guard against accidental LS wipe:
+    window.addEventListener('pageshow', function () {
+      try { cacheSessionSnapshot(); } catch (e) {}
+    });
 
     document.body.addEventListener('htmx:confirm', function (ev) {
       var id = currentRfxId();
