@@ -1,29 +1,50 @@
-# Decisions: what I built, what I left out, and where the real problem is
+# Decisions — RFx Crew architecture
 
-**One page. Written for the reviewer who will drive the live demo.**
+**One page for the reviewer driving the live demo of this crew build.**
 
 ## The bet
 
-The spreadsheet does not die because extraction gets good enough. It dies when a buyer with ₹4 crore on the line trusts the screen more than their own retyping. So I optimised for *trust*, not for coverage of formats. Three rules follow from that, and every screen enforces them:
+Trust beats format coverage. A buyer with crores on the line will only leave the
+spreadsheet when every number on screen is either (a) traced to a vendor file or
+(b) explicitly flagged. The crew architecture makes that rule enforceable: each agent
+has one job and one output contract in `shared_models.py`.
 
-1. **No value without evidence.** The model may only report a price, term or answer if it can quote the verbatim text it came from and where (cell, page, paragraph, image line). The app then checks the quote against the source; if it is not there, the value is downgraded to *needs review*. The buyer can click any cell and see the cell, the highlighted PDF region, or the photo.
-2. **The model never does arithmetic.** Unit conversion (per 100, per 1,000, per bundle of 20, per kg via a disclosed nominal weight), FX (fixed, dated rate), coverage, rankings, award totals, sensitivity: all in pandas/plain Python. The analyst is a tool-caller; every table under an answer is a raw engine result, and it has a `calculate` tool so even differences and percentages are computed, not recalled.
-3. **Uncertainty is a first-class state, not a footnote.** Cells are `ok`, `converted`, `needs review`, `unresolved` ("same as last year"), `missing`, or `reviewed`. Anything not `ok`/`converted`/`reviewed` is excluded from every total unless the buyer explicitly asks to include it, and every answer ends with machine-generated caveats listing exactly what was excluded and why.
+## Why five agents (not a monolith)
 
-## Choices with no right answer, and why I went the way I did
+| Agent | Why it exists as its own unit |
+|---|---|
+| **Drafter** | Conversational / generative. Failure mode is a bad RFx, not a bad price. |
+| **Dispatcher** | Plumbing. SMTP stubbed; outbox artefacts keep “what did we ask?” auditable. |
+| **Parser** | Format chaos. Deterministic JSON/CSV; LLM/vision only for unstructured files. |
+| **Normalizer** | Pure transformation: FX, UOM, line mapping, gap flags. No prose. |
+| **Analyst** | Language over a frozen matrix. Calls ranking helpers; does not redo FX math. |
 
-- **Vendor files are generated from the drafted RFx, not pre-canned.** The RFx is genuinely AI-drafted each run, so a static dataset would not match. Generating the five replies in code from whatever the RFx contains also means extraction cannot be tuned to a file. The personalities are fixed (the Excel that ignores the template, the footnote discount, the USD-per-1,000 Word doc, the angled per-bundle photo, the one-line email), the numbers are not.
-- **Per-kg quotes are converted, but loudly.** The email vendor quotes ₹/kg. I convert using an RSC blank-weight formula from the RFx dimensions and GSM, show the formula in the cell, and mark the cell `converted`. The alternative (refuse to compare) would hide the cheapest vendor. The alternative to that (silently convert) would hide the assumption. "Rest same as last year" is `unresolved`: we do not have last year, so we do not invent it.
-- **Questionnaire gate is strict.** A vendor is *cleared* only if every knockout question has a clear pass. Unanswered is *incomplete*, not failed, and incomplete vendors are excluded from "cleared-only" awards but shown everywhere else. The photo vendor answered nothing; the analyst says so rather than guessing.
-- **Freight and conditional discounts are never auto-applied.** They are extracted, flagged on the vendor header, listed in caveats, and applied only when the buyer asks ("apply conditional discounts"). Applying a 5%-above-₹25-lakh footnote automatically is exactly how spreadsheets lie.
-- **Buyer overrides are allowed and logged.** A buyer who called the vendor can accept or override a flagged cell with a mandatory note. It shows as `reviewed`, in a different colour, and in the export's review log. Trust includes being able to see where a human intervened.
-- **FastAPI, not Streamlit; Vercel, not Cloudflare.** The brief suggested Streamlit. I switched so the demo could be a permanent public URL on a free plan: Streamlit's persistent websocket server does not fit Vercel's request model, and Cloudflare cannot host it at all without a paid container plan. Server-rendered HTML with HTMX also made the evidence drawer and per-cell interactions cheap.
-- **Claude Sonnet for everything, one wrapper.** Vision handles the photo (no Tesseract to deploy), forced tool calls give strict JSON, tool use gives the analyst. Every call is logged (purpose, tokens, latency) on an "AI call log" page so a reviewer can see there are exactly N calls and what each was for.
+A sequential orchestrator (`orchestrator/pipeline.py`) is enough — no CrewAI/LangChain
+dependency. Each agent stays a plain Python module.
 
-## What I deliberately left out
+## Choices with trade-offs
 
-Real email (stubbed to an Outbox), vendor portal/logins, ERP hand-off, payments, multi-user roles, retries/queues for long extractions (each vendor is read in one request; a production system would queue), private file storage (synthetic data, public random-path blobs), and any hardcoding of demo answers. I also did not build a "template" for vendors: the whole point is that they never follow it.
+- **FastAPI + Jinja/HTMX, not Streamlit.** Fits Vercel’s request model and a permanent
+  public URL; evidence/matrix UI is ordinary HTML partials.
+- **New Vercel project / URL.** Entrypoint `app_crew.py` is separate from any prior
+  kill-the-quote-spreadsheet deployment so reviewers are not looking at a stale build.
+- **Shared Pydantic contracts first.** Agents import `shared_models` only.
+- **Stub SMTP, real outbox files.** Transport stubbed; every message under `data/outbox/`.
+- **Normalizer flags over silent fixes.** USD→INR uses a dated demo rate; UOM conversions
+  are explicit; missing / uncertain / uom_mismatch stay first-class statuses.
+- **Analyst helpers are deterministic.** Cheapest-per-line and totals are Python. When
+  Claude is available it narrates over precomputed tables.
+- **Sample vendor pack in-repo.** Ugly-edge samples (JSON per-100, CSV with gaps,
+  USD/1000 text, bundle rate card, per-kg email) so ingest demos without live mail.
 
-## Where the interesting problem actually is
+## Deliberately left out
 
-Extraction is now a commodity; a good model reads the angled photo. The hard part is **row matching under ambiguity and the buyer's decision under partial data**. Two RFx lines share a size and differ only in print; a vendor row omits the print. Was it a quote for line 1, line 2, or both? The system's honest answer is "candidates: 1, 2; needs review", and the product question is how much of that ambiguity a buyer will tolerate before they reopen Excel. My answer here: show the ambiguity, make resolving it one click with an audit trail, and draft the clarification email for them. The next thing I would build is not a better parser; it is a vendor-side "confirm these 4 mappings" link that closes the loop without anyone retyping anything.
+Real email delivery/ingestion, vendor logins, ERP/payment, multi-user ACL, production
+queues, private blob storage, and hardcoded answers to demo questions.
+
+## Where the interesting problem is
+
+Not “can the model read the file?” — it can. The hard part is **row matching under
+ambiguity** and **decisions under partial data** (“same as last year”, 27/30 lines,
+incomplete knockout questionnaire). The crew surfaces those as flags and caveats.
+Next build: a vendor confirm-mappings loop that closes ambiguity without retyping.
