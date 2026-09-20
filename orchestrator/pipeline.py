@@ -92,6 +92,7 @@ class RFxPipeline:
         self.awards: dict[str, str] = {}
         self.award_validation: dict[str, Any] = {}
         self.award_notice_paths: list[str] = []
+        self.award_log: list[dict[str, Any]] = []
         self.freeze: Optional[dict[str, Any]] = None
         self.review_log: list[dict[str, Any]] = []
         self.partial_requests: list[dict[str, Any]] = []
@@ -1362,7 +1363,7 @@ class RFxPipeline:
         }
 
     def notify_awarded_vendors(self) -> list[str]:
-        """Stub-write award_notice_*.txt into data/outbox via dispatcher helper."""
+        """Stub-write award_notice_*.txt into data/outbox; surface full emails on Outbox."""
         if not self.rfx:
             raise RuntimeError("No RFx loaded.")
         if not self.awards:
@@ -1370,28 +1371,31 @@ class RFxPipeline:
         lines = None
         if self.award_validation:
             lines = self.award_validation.get("awards")
-        paths = write_award_notices(
-            self.rfx,
-            self.awards,
-            outbox_dir=OUTBOX_DIR,
-            lines=lines,
-        )
+        agent = VendorDispatcherAgent(stub=True, outbox_dir=OUTBOX_DIR)
+        paths = agent.write_award_notices(self.rfx, self.awards, lines=lines)
+        # Agent.dispatch_log holds full award_notice rows (to/subject/body_preview).
+        records = [dict(r) for r in (agent.dispatch_log or []) if r.get("kind") == "award_notice"]
+        for r in records:
+            r["status"] = "stub_sent"
+            r["delivery"] = "stub_sent"
+            r.setdefault("file", Path(str(r.get("path") or "")).name)
         self.award_notice_paths = [str(p) for p in paths]
-        # Also surface on dispatch_log so Send tab can list them
-        for p in self.award_notice_paths:
-            self.dispatch_log.append(
-                {
-                    "kind": "award_notice",
-                    "path": p,
-                    "file": Path(p).name,
-                    "status": "stubbed",
-                    "delivery": "stubbed (no SMTP)",
-                }
-            )
+        self.award_log = records
+        # Replace prior award_notice rows on Outbox log, keep RFQ invites.
+        kept: list[dict[str, Any]] = []
+        for row in self.dispatch_log or []:
+            kind = str(row.get("kind") or "")
+            path_s = str(row.get("path") or row.get("file") or "").lower()
+            subj = str(row.get("subject") or "").lower()
+            if kind == "award_notice" or "award_notice" in path_s or "award notice" in subj:
+                continue
+            kept.append(row)
+        kept.extend(records)
+        self.dispatch_log = kept
         names = ", ".join(Path(p).name for p in self.award_notice_paths) or "(none)"
         self.append_review_log(
             "award_notices_sent",
-            f"{len(self.award_notice_paths)} notice(s): {names}",
+            f"{len(self.award_notice_paths)} notice(s) stub_sent: {names}",
             persist=False,
         )
         self._persist()
@@ -1415,6 +1419,7 @@ class RFxPipeline:
             "awards": self.awards,
             "award_validation": self.award_validation,
             "award_notice_paths": list(self.award_notice_paths or []),
+            "award_log": list(self.award_log or []),
             "freeze": self.freeze,
             "review_log": list(self.review_log or []),
             "partial_requests": list(self.partial_requests or []),
@@ -1448,6 +1453,7 @@ class RFxPipeline:
         self.awards = dict(data.get("awards") or {})
         self.award_validation = dict(data.get("award_validation") or {})
         self.award_notice_paths = list(data.get("award_notice_paths") or [])
+        self.award_log = list(data.get("award_log") or [])
         self.freeze = data.get("freeze") or None
         self.review_log = list(data.get("review_log") or [])
         self.partial_requests = list(data.get("partial_requests") or [])

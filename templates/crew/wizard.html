@@ -126,13 +126,19 @@
 <section class="card space-y-4">
   <div class="tip-banner no-print" data-tip-key="outbox" role="note">
     <span class="tip-icon" aria-hidden="true">i</span>
-    <div class="tip-body"><strong>Outbox.</strong> Preview cover emails, then <em>Send to vendors</em> (stub → <code>data/outbox/</code>). Next: open <strong>Inbox</strong> and seed replies.</div>
+    <div class="tip-body"><strong>Outbox.</strong> Preview cover emails, then <em>Send to vendors</em> (stub → <code>data/outbox/</code>). Award notices from the Award tab also land here (filter Type → Award notice). Next: <strong>Inbox</strong>.</div>
     <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
   </div>
   <div>
     <h2 class="font-medium text-lg">Outbox <span class="text-slate-400 font-normal text-sm">(outbound emails)</span></h2>
     <p class="section-muted">Review cover emails, then stub-send RFQs (and later award notices) to the outbox.</p>
   </div>
+  {% if notices_just_sent %}
+  <div class="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 no-print" role="status">
+    <div class="font-medium">Emails sent (stub) — {{ notices_just_sent }} award notice(s)</div>
+    <p class="text-xs mt-1">Vendor emails were written under <code>data/outbox/</code> (no SMTP). Filtered to <strong>Award notice</strong> below. <a class="underline" href="/crew/{{ rfx.rfx_id }}/wizard?step=award">Back to Award</a></p>
+  </div>
+  {% endif %}
 
   {% if pipe.cover_previews %}
   <div class="space-y-2">
@@ -162,11 +168,17 @@
   </div>
   {% endif %}
 
-  {% if not pipe.dispatch_log %}
+  {% set has_outbox = (pipe.dispatch_log or award_log or award_notice_paths) %}
+  {% if not has_outbox %}
   <form method="post" action="/crew/{{ rfx.rfx_id }}/dispatch">
     <button class="btn" type="submit" title="Writes stub RFQ emails into data/outbox/ (no SMTP)">Send to {{ rfx.vendors|length }} vendors</button>
   </form>
   {% else %}
+  {% if not pipe.dispatch_log %}
+  <form method="post" action="/crew/{{ rfx.rfx_id }}/dispatch" class="mb-2">
+    <button class="btn-sec" type="submit" title="Also stub-send RFQ invites">Send RFQ invites (stub)</button>
+  </form>
+  {% endif %}
   <div data-filter-root class="space-y-2">
     <div class="filter-bar no-print">
       <input type="search" data-filter-search placeholder="Search to / subject…" title="Filter by recipient or subject" aria-label="Search outbox" />
@@ -177,9 +189,9 @@
         {% endfor %}
       </select>
       <select data-filter-type title="RFQ invites vs award notices" aria-label="Type">
-        <option value="all">All types</option>
-        <option value="rfq">RFQ</option>
-        <option value="award_notice">Award notice</option>
+        <option value="all" {% if outbox_filter not in ('rfq', 'award_notice') %}selected{% endif %}>All types</option>
+        <option value="rfq" {% if outbox_filter == 'rfq' %}selected{% endif %}>RFQ</option>
+        <option value="award_notice" {% if outbox_filter == 'award_notice' %}selected{% endif %}>Award notice</option>
       </select>
       <span class="filter-count" data-filter-count></span>
     </div>
@@ -207,25 +219,56 @@
             <td><span class="chip chip-ok">{{ row.status or row.delivery or 'stubbed' }}</span></td>
             <td class="text-xs text-slate-500 max-w-[10rem] truncate" title="{{ row.path or row.file or '' }}">{{ row.path or row.file or '' }}</td>
           </tr>
+          {% if is_award and row.body_preview %}
+          <tr data-filter-row
+              data-vendor="{{ (row.vendor_id or '')|lower }}"
+              data-type="award_notice"
+              data-search="{{ row.vendor_name or '' }} {{ row.to or '' }} {{ subj }} {{ row.body_preview }}">
+            <td colspan="6" class="bg-slate-50 text-xs text-slate-600 px-3 py-2">
+              <span class="font-medium text-slate-700">Preview:</span> {{ row.body_preview }}
+            </td>
+          </tr>
+          {% endif %}
         {% endfor %}
-        {% if award_notice_paths %}
-          {% for p in award_notice_paths %}
-          {% set already = false %}
-          {% for row in pipe.dispatch_log %}
-            {% if (row.path or row.file or '') == p %}{% set already = true %}{% endif %}
-          {% endfor %}
-          {% if not already %}
+        {% set logged_paths = [] %}
+        {% for row in pipe.dispatch_log %}
+          {% if row.path %}{% set _ = logged_paths.append(row.path) %}{% endif %}
+          {% if row.file and row.file not in logged_paths %}{% set _ = logged_paths.append(row.file) %}{% endif %}
+        {% endfor %}
+        {% for em in award_log or [] %}
+          {% if em.path and em.path not in logged_paths %}
+          <tr data-filter-row
+              data-vendor="{{ (em.vendor_id or '')|lower }}"
+              data-type="award_notice"
+              data-search="{{ em.vendor_name or '' }} {{ em.vendor_id or '' }} {{ em.to or '' }} {{ em.subject or '' }} {{ em.path or '' }}">
+            <td><span class="chip chip-info">Award notice</span></td>
+            <td>{{ em.vendor_name or em.vendor_id }}</td>
+            <td class="text-slate-600">{{ em.to or '—' }}</td>
+            <td class="max-w-xs truncate" title="{{ em.subject or '' }}">{{ em.subject or 'Award notice' }}</td>
+            <td><span class="chip chip-ok">{{ em.status or 'stub_sent' }}</span></td>
+            <td class="text-xs text-slate-500 max-w-[10rem] truncate" title="{{ em.path or '' }}">{{ em.path or '' }}</td>
+          </tr>
+          {% if em.body_preview %}
+          <tr data-filter-row data-vendor="{{ (em.vendor_id or '')|lower }}" data-type="award_notice" data-search="{{ em.body_preview }}">
+            <td colspan="6" class="bg-slate-50 text-xs text-slate-600 px-3 py-2">
+              <span class="font-medium text-slate-700">Preview:</span> {{ em.body_preview }}
+            </td>
+          </tr>
+          {% endif %}
+          {% endif %}
+        {% endfor %}
+        {% for p in award_notice_paths or [] %}
+          {% if p not in logged_paths %}
           <tr data-filter-row data-vendor="" data-type="award_notice" data-search="award notice {{ p }}">
             <td><span class="chip chip-info">Award notice</span></td>
             <td>—</td>
             <td>—</td>
             <td>Award notice</td>
-            <td><span class="chip chip-ok">stubbed</span></td>
+            <td><span class="chip chip-ok">stub_sent</span></td>
             <td class="text-xs text-slate-500"><code>{{ p }}</code></td>
           </tr>
           {% endif %}
-          {% endfor %}
-        {% endif %}
+        {% endfor %}
         </tbody>
       </table>
     </div>
@@ -677,7 +720,7 @@
 <section class="card space-y-4">
   <div class="tip-banner no-print" data-tip-key="award" role="note">
     <span class="tip-icon" aria-hidden="true">i</span>
-    <div class="tip-body"><strong>Award.</strong> Assign Pass vendors normally, or <em>Request partial award</em> for a Fail vendor (needs manager approval). Suggest cheapest / Export Excel / Freeze still apply. Next: <strong>Audit</strong>.</div>
+    <div class="tip-body"><strong>Award.</strong> Assign Pass vendors, Freeze when ready, then <em>Send award notices (stub)</em> — emails appear on the <strong>Outbox</strong> tab (Type → Award notice). Export CSV/Excel stay available after send. Next: <strong>Audit</strong>.</div>
     <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
   </div>
   <div class="flex flex-wrap items-start justify-between gap-3">
@@ -696,6 +739,7 @@
       </form>
       {% endif %}
       <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/export.xlsx" title="Download award workbook">Export Excel</a>
+      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/award/export.csv" title="Download award CSV (always available after freeze/send)">Export CSV</a>
     </div>
   </div>
 
@@ -1038,14 +1082,38 @@
   {% endif %}
 
   {% if pipe.awards %}
-  <div class="rounded-lg border border-slate-200 bg-white p-4 space-y-2 no-print">
-    <div class="font-medium text-sm">Notify awarded vendors (stub)</div>
-    <p class="text-xs text-slate-500">Writes <code>award_notice_*.txt</code> into <code>data/outbox/</code>. No SMTP.</p>
+  <div class="rounded-lg border border-slate-200 bg-white p-4 space-y-3 no-print">
+    <div class="font-medium text-sm">Notify awarded vendors (stub SMTP)</div>
+    <p class="text-xs text-slate-500">After freeze (optional), send award notices. Emails go to vendors as stub files under <code>data/outbox/</code> — no real SMTP. They also appear on the <strong>Outbox</strong> tab (Type: Award notice).</p>
     <form method="post" action="/crew/{{ rfx.rfx_id }}/award/notify" class="flex flex-wrap items-center gap-2">
-      <button class="btn" type="submit" title="Stub-write award notices to outbox">Send award notices (stub)</button>
-      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send">Open Outbox →</a>
+      <button class="btn" type="submit" title="Stub-write award notices and open Outbox">Send award notices (stub)</button>
+      <a class="btn-sec" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=award">Open Outbox (award) →</a>
     </form>
-    {% if award_notice_paths %}
+    {% if award_log %}
+    <div class="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-950 space-y-3" id="emails-sent-panel">
+      <div class="font-medium">Emails sent ({{ award_log|length }}) · status <code>stub_sent</code></div>
+      <p class="text-xs text-emerald-900/80">Each row is the stub email that would go to that vendor. Open Outbox to filter by Award notice.</p>
+      <ul class="space-y-3">
+        {% for em in award_log %}
+        <li class="rounded border border-emerald-200 bg-white p-3 text-slate-800">
+          <div class="flex flex-wrap gap-2 items-baseline text-xs mb-1">
+            <span class="chip chip-ok">{{ em.status or 'stub_sent' }}</span>
+            <span class="font-medium">{{ em.vendor_name or em.vendor_id }}</span>
+          </div>
+          <div class="text-xs space-y-0.5">
+            <div><span class="text-slate-500">To:</span> {{ em.to or '—' }}</div>
+            <div><span class="text-slate-500">Subject:</span> {{ em.subject or '—' }}</div>
+            <div class="text-slate-600 mt-1"><span class="text-slate-500">Preview:</span> {{ em.body_preview or (em.body[:180] + '…' if em.body and em.body|length > 180 else em.body or '—') }}</div>
+            {% if em.path %}
+            <div class="text-slate-400 truncate mt-1" title="{{ em.path }}"><span class="text-slate-500">File:</span> <code class="text-[10px]">{{ em.path }}</code></div>
+            {% endif %}
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
+      <a class="btn-sec text-xs inline-flex" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=award">View on Outbox (Award notice filter) →</a>
+    </div>
+    {% elif award_notice_paths %}
     <div class="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
       <div class="font-medium mb-1">Notices written ({{ award_notice_paths|length }})</div>
       <ul class="text-xs space-y-0.5">
@@ -1053,7 +1121,7 @@
         <li><code>{{ p }}</code></li>
         {% endfor %}
       </ul>
-      <a class="underline text-xs" href="/crew/{{ rfx.rfx_id }}/wizard?step=send">View on Outbox tab</a>
+      <a class="underline text-xs" href="/crew/{{ rfx.rfx_id }}/wizard?step=send&amp;filter=award">View on Outbox tab</a>
     </div>
     {% endif %}
   </div>

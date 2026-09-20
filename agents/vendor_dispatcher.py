@@ -370,16 +370,22 @@ class VendorDispatcherAgent:
             )
             email_path.write_text(artifact, encoding="utf-8")
             paths.append(str(email_path))
+            body = notice["body"]
+            preview = " ".join(body.split())
+            if len(preview) > 220:
+                preview = preview[:217] + "…"
             record = {
                 "kind": "award_notice",
                 "vendor_id": vendor_id,
                 "vendor_name": notice["vendor_name"],
                 "to": notice["to"],
                 "subject": notice["subject"],
+                "body": body,
+                "body_preview": preview,
                 "rfx_id": rfx_id,
                 "sent_at": sent_at,
-                "status": "stubbed",
-                "delivery": "stubbed",
+                "status": "stub_sent",
+                "delivery": "stub_sent",
                 "path": str(email_path),
                 "lines_won": [w.get("line_id") for w in won],
             }

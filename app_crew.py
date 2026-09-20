@@ -218,6 +218,9 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "shortlist_pass": shortlist_pass,
         "shortlist_fail": shortlist_fail,
         "award_notice_paths": list(getattr(pipe, "award_notice_paths", None) or []),
+        "award_log": list(getattr(pipe, "award_log", None) or []),
+        "outbox_filter": "",
+        "notices_just_sent": 0,
         "q_matrix": q_matrix,
         "ko_matrix": ko_matrix,
         "award_gaps": award_gaps,
@@ -372,6 +375,16 @@ def crew_wizard(request: Request, rfx_id: str, step: Optional[str] = None):
         pipe.set_wizard_step(step)
         _save(pipe)
     ctx = _wizard_ctx(pipe)
+    filt = (request.query_params.get("filter") or "").strip().lower()
+    if filt in ("award", "award_notice"):
+        filt = "award_notice"
+    elif filt not in ("", "all", "rfq"):
+        filt = ""
+    ctx["outbox_filter"] = filt
+    try:
+        ctx["notices_just_sent"] = int(request.query_params.get("notices") or 0)
+    except ValueError:
+        ctx["notices_just_sent"] = 0
     return _render(request, "crew/wizard.html", **ctx)
 
 
@@ -828,7 +841,7 @@ def crew_award_notify(request: Request, rfx_id: str):
         return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
     _save(pipe)
     return RedirectResponse(
-        f"/crew/{rfx_id}/wizard?step=award&notices={len(paths)}",
+        f"/crew/{rfx_id}/wizard?step=send&filter=award&notices={len(paths)}",
         status_code=303,
     )
 
