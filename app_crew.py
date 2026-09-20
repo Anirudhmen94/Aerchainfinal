@@ -254,8 +254,9 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         {
             "label": "Defendable award to VP",
             "q": (
-                "Give a defensible award recommendation I can take to a VP: split vs single-vendor, "
-                "totals among questionnaire-cleared vendors only, and the main risks."
+                "In plain language, what award would you take to a VP? Who is in or out on knockouts, "
+                "whether to split or stay with one vendor among questionnaire-cleared suppliers, "
+                "rough totals, and the main risks — no emoji, no report template."
             ),
         },
     ]
