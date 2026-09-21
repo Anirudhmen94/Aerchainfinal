@@ -146,9 +146,13 @@ def put_bytes(path: str, data: bytes, content_type: str = "application/octet-str
         target.write_bytes(data)
         return f"/files/{path}"
 
+    # Private stores reject public access (HTTP 400). Default private; override via BLOB_ACCESS.
+    access = (os.environ.get("BLOB_ACCESS") or "private").strip().lower()
+    if access not in ("private", "public"):
+        access = "private"
     headers = _headers(
         {
-            "x-vercel-blob-access": "public",
+            "x-vercel-blob-access": access,
             "x-content-type": content_type,
             "x-add-random-suffix": "0",
             "x-allow-overwrite": "1",
@@ -180,8 +184,10 @@ def get_bytes(url: str) -> bytes | None:
     if url.startswith("/files/"):
         target = LOCAL_ROOT / _safe(url[len("/files/"):])
         return target.read_bytes() if target.exists() else None
+    # Private blobs are not anonymously readable — auth like other Blob API calls.
+    headers = _headers() if blob_configured() else None
     with httpx.Client(timeout=60, follow_redirects=True) as client:
-        r = client.get(url)
+        r = client.get(url, headers=headers)
         if r.status_code == 404:
             return None
         r.raise_for_status()
