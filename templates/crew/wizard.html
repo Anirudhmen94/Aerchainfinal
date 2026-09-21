@@ -58,7 +58,7 @@
 <section class="card space-y-4">
   <div class="tip-banner no-print" data-tip-key="draft" role="note">
     <span class="tip-icon" aria-hidden="true">i</span>
-    <div class="tip-body"><strong>Draft.</strong> Edit the brief (or keep the happy-path default), then click <em>Generate line items</em>. Next: open <strong>Outbox</strong> to preview vendor emails.</div>
+    <div class="tip-body"><strong>Draft.</strong> Enter the brief, then click <em>Generate line items</em>. Scope (and the drafted lines) appear after that. Next: <strong>Outbox</strong>.</div>
     <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
   </div>
   <div>
@@ -80,10 +80,13 @@
         <input name="terms" value="{{ rfx.terms }}" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
       </div>
     </div>
+    {% if rfx.line_items %}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Scope</label>
       <textarea name="scope" rows="3" class="w-full rounded-lg border border-slate-300 p-3 text-sm">{{ rfx.scope }}</textarea>
+      <p class="text-[10px] text-slate-400 mt-1">Filled after you generate line items from the brief — edit anytime, then regenerate if needed.</p>
     </div>
+    {% endif %}
     <button class="btn" type="submit" id="gen-btn" title="Calls RFx Drafter to build line items, questionnaire, and vendor list">
       {% if rfx.line_items %}Regenerate line items{% else %}Generate line items{% endif %}
     </button>
