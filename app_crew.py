@@ -769,6 +769,13 @@ def crew_wizard(request: Request, rfx_id: str, step: Optional[str] = None):
     if step and step in WIZARD_STEPS:
         pipe.set_wizard_step(step)
         _save(pipe)
+    # After inbox parse, Compare must show the matrix without a second click.
+    if (step or pipe.wizard_step) == "compare" or (pipe.quotes and not pipe.comparison):
+        try:
+            pipe.ensure_comparison()
+            _save(pipe)
+        except Exception:
+            log.exception("ensure_comparison on wizard render failed")
     ctx = _wizard_ctx(pipe)
     filt = (request.query_params.get("filter") or "").strip().lower()
     if filt in ("award", "award_notice"):
@@ -1024,15 +1031,14 @@ async def crew_inbox_upload(
 
 @app.post("/crew/{rfx_id}/inbox/continue", response_class=HTMLResponse)
 def crew_inbox_continue(rfx_id: str):
-    """Soft jump to Compare; build matrix only when quotes exist."""
+    """Soft jump to Compare; build matrix from parsed inbox quotes."""
     pipe = _session(rfx_id)
     if not pipe.rfx:
         return _not_found_response(rfx_id)
-    if pipe.quotes and not pipe.comparison:
-        try:
-            pipe.normalize()
-        except Exception:
-            pass  # empty Compare tab explains what's missing
+    try:
+        pipe.ensure_comparison(force=bool(pipe.quotes))
+    except Exception:
+        log.exception("ensure_comparison on inbox continue failed")
     pipe.set_wizard_step("compare")
     _save(pipe)
     return RedirectResponse(f"/crew/{rfx_id}/wizard?step=compare", status_code=303)

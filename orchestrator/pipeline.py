@@ -876,6 +876,9 @@ class RFxPipeline:
         self.quotes = quotes
         self.step = "parsed"
         self.wizard_step = "inbox"
+        self.comparison = None
+        self.ensure_comparison(force=True)
+        self.wizard_step = "inbox"
         self._persist()
         return self.quotes
 
