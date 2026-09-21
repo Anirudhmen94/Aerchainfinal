@@ -1,6 +1,8 @@
 """Inbox parse-all must hydrate the Compare matrix without a second click."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from unittest.mock import MagicMock, patch
 
 import pytest

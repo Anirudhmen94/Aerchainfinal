@@ -58,7 +58,7 @@
 <section class="card space-y-4">
   <div class="tip-banner no-print" data-tip-key="draft" role="note">
     <span class="tip-icon" aria-hidden="true">i</span>
-    <div class="tip-body"><strong>Draft.</strong> Enter the brief and hit <em>Generate line items</em>. Until then this page stays empty of scope and lines — they appear together after generate. Next: <strong>Outbox</strong>.</div>
+    <div class="tip-body"><strong>Draft.</strong> Type or paste a brief <em>or</em> upload a requirements file (PDF, Word, text, Excel), then generate. Scope and lines stay empty until generate. Next: <strong>Outbox</strong>.</div>
     <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
   </div>
   <div>
@@ -77,6 +77,15 @@
       {% if rfx.line_items %}Regenerate line items{% else %}Generate line items{% endif %}
     </button>
   </form>
+
+  <div class="border-t border-slate-100 pt-4 space-y-2">
+    <div class="text-sm font-medium text-slate-700">Or upload a requirements file</div>
+    <p class="text-xs text-slate-500">PDF, Word (.docx), text (.txt/.md), CSV, or Excel (.xlsx). Extracted text becomes the brief, then line items are generated the same way as above.</p>
+    <form method="post" action="/crew/{{ rfx.rfx_id }}/draft/upload-brief" enctype="multipart/form-data" class="flex flex-wrap gap-2 items-center text-sm" id="brief-upload-form">
+      <input type="file" name="file" accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xlsm,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="text-xs" title="Upload requirements brief" required />
+      <button class="btn-sec" type="submit" id="brief-upload-btn" title="Extract text from file and generate line items">Upload &amp; generate</button>
+    </form>
+  </div>
 
   {% if rfx.line_items %}
   <form method="post" action="/crew/{{ rfx.rfx_id }}/draft/lines" class="space-y-3 border-t border-slate-100 pt-4">
@@ -138,6 +147,10 @@
   document.getElementById('gen-form')?.addEventListener('submit', function () {
     const b = document.getElementById('gen-btn');
     if (b) { b.disabled = true; b.textContent = 'Generating…'; }
+  });
+  document.getElementById('brief-upload-form')?.addEventListener('submit', function () {
+    const b = document.getElementById('brief-upload-btn');
+    if (b) { b.disabled = true; b.textContent = 'Uploading…'; }
   });
 </script>
 {% endif %}

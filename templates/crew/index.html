@@ -16,7 +16,7 @@
  class="mb-6 tip-banner" data-tip-key="home" role="note">
   <span class="tip-icon" aria-hidden="true">i</span>
   <div class="tip-body">
-    <strong>Happy path.</strong> Enter the brief, then <em>Generate line items</em>. Scope and line items stay empty until that click — then they appear together on Draft.
+    <strong>Happy path.</strong> Enter the brief <em>or</em> upload a requirements file, then generate. Scope and line items stay empty until that click — then they appear together on Draft.
   </div>
   <button type="button" class="tip-dismiss" id="qs-dismiss" aria-label="Dismiss tip">Dismiss</button>
 </div>
@@ -26,7 +26,7 @@
     <div>
       <h1 class="text-2xl font-semibold tracking-tight mb-1">Draft an RFx</h1>
       <p class="section-muted">
-        Brief only until you generate. No scope or line items until Claude returns the draft.
+        Type a brief or upload a requirements file. No scope or line items until Claude returns the draft.
       </p>
     </div>
     <p class="text-xs text-indigo-900/90 rounded-lg border border-indigo-100 bg-indigo-50/80 px-3 py-2">
@@ -53,6 +53,27 @@
         Generate line items
       </button>
     </form>
+
+    <div class="border-t border-slate-100 pt-4 space-y-2">
+      <div class="text-sm font-medium text-slate-700">Or upload a requirements file</div>
+      <p class="text-xs text-slate-500">PDF, Word (.docx), text (.txt/.md), CSV, or Excel (.xlsx). Starts a new event from the file text.</p>
+      <form method="post" action="/crew/start/upload-brief" enctype="multipart/form-data" class="space-y-3" id="start-upload-form">
+        <input type="file" name="file" accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xlsm,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="text-xs w-full" title="Upload requirements brief" required />
+        <div class="grid md:grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs text-slate-500 mb-1">Title (optional)</label>
+            <input name="title" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="e.g. Chakan cartons FY26" />
+          </div>
+          <div class="md:col-span-2">
+            <label class="block text-xs text-slate-500 mb-1">Terms override (optional)</label>
+            <input name="terms" class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Leave blank to edit later" />
+          </div>
+        </div>
+        <button class="btn-sec" type="submit" id="start-upload-btn" title="Extract text from file and draft line items">
+          Upload &amp; generate
+        </button>
+      </form>
+    </div>
   </div>
   <div class="md:col-span-2 space-y-4">
     <div class="card">
@@ -76,6 +97,10 @@
   document.getElementById('start-form')?.addEventListener('submit', function () {
     const b = document.getElementById('start-gen-btn');
     if (b) { b.disabled = true; b.textContent = 'Generating…'; }
+  });
+  document.getElementById('start-upload-form')?.addEventListener('submit', function () {
+    const b = document.getElementById('start-upload-btn');
+    if (b) { b.disabled = true; b.textContent = 'Uploading…'; }
   });
 </script>
 {% endblock %}

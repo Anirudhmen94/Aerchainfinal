@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.templating import Jinja2Templates  # noqa: E402
 
 from agents.qualification import eligibility_gaps, questionnaire_matrix  # noqa: E402
+from core import ingest  # noqa: E402
 from orchestrator.pipeline import (  # noqa: E402
     DATA_ROOT,
     WIZARD_STEPS,
@@ -820,6 +821,61 @@ def crew_wizard_next(rfx_id: str):
     return RedirectResponse(f"/crew/{rfx_id}/wizard?step={pipe.wizard_step}", status_code=303)
 
 
+
+# Extensions accepted as Draft / Home requirements briefs (not vendor quotes).
+_BRIEF_UPLOAD_EXTS = {".pdf", ".docx", ".txt", ".md", ".csv", ".xlsx", ".xlsm"}
+
+
+def _clean_extracted_brief(raw: str) -> str:
+    """Strip ingest location tags so the brief reads as plain requirements text."""
+    import re as _re
+
+    lines: list[str] = []
+    for line in (raw or "").splitlines():
+        s = line.strip()
+        if not s or s.startswith("==="):
+            continue
+        # Drop [line N], [para N], [page N], [Sheet!A1] style anchors
+        s = _re.sub(r"^\[[^\]]+\]\s*", "", s)
+        # XLSX dumps may still have mid-line [Sheet!coord] tokens
+        s = _re.sub(r"\s*\[[^\]]+![A-Za-z]+\d+\]\s*", " ", s)
+        s = _re.sub(r"\s+", " ", s).strip()
+        if s:
+            lines.append(s)
+    return "\n".join(lines).strip()
+
+
+def _brief_text_from_upload(filename: str, data: bytes) -> str:
+    """Extract plain brief text from an uploaded requirements file."""
+    name = Path(filename or "upload").name
+    suffix = Path(name).suffix.lower()
+    if suffix not in _BRIEF_UPLOAD_EXTS:
+        raise ValueError(
+            f"Unsupported file type '{suffix or '(none)'}'. "
+            "Use PDF, Word (.docx), text (.txt/.md), CSV, or Excel (.xlsx)."
+        )
+    if not data:
+        raise ValueError("Uploaded file is empty.")
+    # .md is plain text; kind_from_name treats it as unknown → UTF-8 decode path.
+    result = ingest.file_to_text(name, data)
+    text = _clean_extracted_brief(result.get("text") or "")
+    if len(text.strip()) < 10:
+        raise ValueError(
+            "Could not extract enough text from the file to use as a brief "
+            "(need at least a couple of sentences)."
+        )
+    return text
+
+
+def _apply_brief_and_generate(pipe: RFxPipeline, brief: str) -> None:
+    """Set brief and run draft / regenerate_lines (same as Generate)."""
+    pipe.update_draft_fields(brief=brief)
+    if pipe.rfx and pipe.rfx.line_items:
+        pipe.regenerate_lines(brief=pipe.brief or brief)
+    else:
+        pipe.draft(pipe.brief or brief)
+
+
 # ── Draft tab ──────────────────────────────────────────────────────────
 
 
@@ -872,6 +928,76 @@ def crew_draft_generate(
         )
     _save(pipe)
     return RedirectResponse(f"/crew/{rfx_id}/wizard?step=draft", status_code=303)
+
+
+
+@app.post("/crew/{rfx_id}/draft/upload-brief", response_class=HTMLResponse)
+async def crew_draft_upload_brief(
+    rfx_id: str,
+    file: UploadFile | None = File(None),
+):
+    """Upload a requirements file → extract text as brief → generate line items."""
+    pipe = _session(rfx_id)
+    if not pipe.rfx:
+        return _not_found_response(rfx_id)
+    if file is None or not file.filename:
+        return _err_html("Please choose a requirements file to upload.", status=400)
+    try:
+        data = await file.read()
+        brief = _brief_text_from_upload(file.filename, data)
+        # Persist original under uploads for audit trail
+        upload_dir = _uploads_dir(rfx_id)
+        dest = upload_dir / Path(file.filename).name
+        dest.write_bytes(data)
+        _apply_brief_and_generate(pipe, brief)
+    except ValueError as exc:
+        return _err_html(str(exc), status=400)
+    except Exception as exc:
+        log.exception("draft upload-brief failed")
+        return _err_html(f"Generate failed: {exc}", status=400)
+    _save(pipe)
+    return RedirectResponse(f"/crew/{rfx_id}/wizard?step=draft", status_code=303)
+
+
+@app.post("/crew/start/upload-brief", response_class=HTMLResponse)
+async def crew_start_upload_brief(
+    request: Request,
+    file: UploadFile | None = File(None),
+    title: str = Form(""),
+    terms: str = Form(""),
+):
+    """Home: start a new event from an uploaded requirements file."""
+    if file is None or not file.filename:
+        return _err_html("Please choose a requirements file to upload.", status=400)
+    try:
+        data = await file.read()
+        brief = _brief_text_from_upload(file.filename, data)
+        pipe = RFxPipeline()
+        pipe.start_draft(brief, title=title, scope="", terms=terms)
+        try:
+            pipe.draft(pipe.brief or brief)
+        except Exception as gen_exc:
+            log.exception("start upload-brief generate failed")
+            _save(pipe)
+            return HTMLResponse(
+                f"<div class='err'>Generate failed: {gen_exc}</div>"
+                f"<p class='text-sm mt-2'><a href='/crew/{pipe.rfx.rfx_id}/wizard?step=draft'>"
+                f"Open Draft to retry</a></p>",
+                status_code=400,
+            )
+        # Persist original under uploads
+        try:
+            upload_dir = _uploads_dir(pipe.rfx.rfx_id)
+            (upload_dir / Path(file.filename).name).write_bytes(data)
+        except Exception:
+            log.warning("could not save uploaded brief file for %s", pipe.rfx.rfx_id)
+        _save(pipe)
+        return RedirectResponse(f"/crew/{pipe.rfx.rfx_id}/wizard?step=draft", status_code=303)
+    except ValueError as exc:
+        return _err_html(str(exc), status=400)
+    except Exception as exc:
+        log.exception("crew_start_upload_brief failed")
+        return _err_html(f"Could not start draft from file: {exc}", status=500)
 
 
 @app.post("/crew/{rfx_id}/draft/lines", response_class=HTMLResponse)
