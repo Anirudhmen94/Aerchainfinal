@@ -223,9 +223,17 @@ def file_to_text(name: str, data: bytes, kind: str | None = None, log: list | No
             return {"text": text, "method": method}
         images = pdf_page_images(data)
         if not images:
+            # Vision path needs rasterized pages; without pymupdf, return text-only gracefully.
+            clear = (
+                "pypdf text only (no pymupdf; scanned PDF images unavailable)"
+                if pymupdf is None
+                else "pymupdf text layer (insufficient text; page images empty)"
+            )
             return {
                 "text": text or "[pdf] No extractable text layer (pymupdf unavailable).",
-                "method": method,
+                "method": clear,
+                "legibility": 0,
+                "caveats": "Cannot render PDF page images for vision transcription without PyMuPDF.",
             }
         parts = []
         caveats = []
