@@ -58,7 +58,7 @@
 <section class="card space-y-4">
   <div class="tip-banner no-print" data-tip-key="draft" role="note">
     <span class="tip-icon" aria-hidden="true">i</span>
-    <div class="tip-body"><strong>Draft.</strong> Type or paste a brief <em>or</em> upload a requirements file (PDF, Word, text, Excel), then generate. Scope and lines stay empty until generate. Next: <strong>Outbox</strong>.</div>
+    <div class="tip-body"><strong>Draft.</strong> Type or paste a brief <em>or</em> upload a requirements file (PDF, Word, text, Excel), then generate. Try the stub <a class="underline" href="/samples/ABC_Snacks_corrugated_brief.txt" download>ABC Snacks corrugated brief</a> (Chakan ~30 SKUs + quality KOs). Scope and lines stay empty until generate. Next: <strong>Outbox</strong>.</div>
     <button type="button" class="tip-dismiss" aria-label="Dismiss tip">Dismiss</button>
   </div>
   <div>
@@ -80,7 +80,7 @@
 
   <div class="border-t border-slate-100 pt-4 space-y-2">
     <div class="text-sm font-medium text-slate-700">Or upload a requirements file</div>
-    <p class="text-xs text-slate-500">PDF, Word (.docx), text (.txt/.md), CSV, or Excel (.xlsx). Extracted text becomes the brief, then line items are generated the same way as above.</p>
+    <p class="text-xs text-slate-500">PDF, Word (.docx), text (.txt/.md), CSV, or Excel (.xlsx). Extracted text becomes the brief, then line items are generated the same way as above. Sample: <a class="underline" href="/samples/ABC_Snacks_corrugated_brief.txt" download>ABC_Snacks_corrugated_brief.txt</a>.</p>
     <form method="post" action="/crew/{{ rfx.rfx_id }}/draft/upload-brief" enctype="multipart/form-data" class="flex flex-wrap gap-2 items-center text-sm" id="brief-upload-form">
       <input type="file" name="file" accept=".pdf,.docx,.txt,.md,.csv,.xlsx,.xlsm,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="text-xs" title="Upload requirements brief" required />
       <button class="btn-sec" type="submit" id="brief-upload-btn" title="Extract text from file and generate line items">Upload &amp; generate</button>

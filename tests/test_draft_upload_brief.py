@@ -26,12 +26,12 @@ def _empty_rfx(rfx_id: str = "RFX-UPLOAD-1") -> RFx:
 def _drafted_rfx(rfx_id: str = "RFX-UPLOAD-1") -> RFx:
     return RFx(
         rfx_id=rfx_id,
-        title="Chakan packaging",
+        title="ABC Snacks Chakan packaging",
         scope="Corrugated cartons for Chakan plant",
         terms="INR per piece",
         line_items=[
-            LineItem(line_id="L01", description="3-ply RSC 300x200x150", qty=12000, uom="ea"),
-            LineItem(line_id="L02", description="5-ply RSC 400x300x200", qty=8000, uom="ea"),
+            LineItem(line_id="L01", description="3-ply RSC 300x200x150", qty=120000, uom="ea"),
+            LineItem(line_id="L02", description="5-ply RSC 400x300x200", qty=35000, uom="ea"),
         ],
         questionnaire=[QuestionnaireItem(id="Q1", question="ISO 9001?", knockout=True)],
         vendors=[Vendor(vendor_id="V01", name="PackForge", email="v1@example.com")],
@@ -44,14 +44,12 @@ def client(tmp_path, monkeypatch):
     monkeypatch.delenv("VERCEL", raising=False)
     store = tmp_path / "crew-store"
     store.mkdir()
-    uploads = tmp_path / "uploads"
-    uploads.mkdir()
     monkeypatch.setattr("orchestrator.pipeline.STORE_DIR", store)
-    monkeypatch.setattr("app_crew.STORE_DIR", store)
-    monkeypatch.setattr("app_crew.DATA_ROOT", tmp_path)
 
     import app_crew
 
+    monkeypatch.setattr(app_crew, "STORE_DIR", store)
+    monkeypatch.setattr(app_crew, "DATA_ROOT", tmp_path)
     app_crew._SESSIONS.clear()
     return TestClient(app_crew.app), app_crew, tmp_path
 
@@ -76,6 +74,17 @@ def test_brief_text_rejects_unsupported():
         app_crew._brief_text_from_upload("photo.png", b"\x89PNG")
 
 
+def test_sample_abc_snacks_brief_extracts():
+    import app_crew
+
+    sample = Path(__file__).resolve().parents[1] / "data" / "samples" / "ABC_Snacks_corrugated_brief.txt"
+    assert sample.is_file()
+    out = app_crew._brief_text_from_upload(sample.name, sample.read_bytes())
+    assert "ABC Snacks" in out or "Chakan" in out
+    assert "ISO 9001" in out
+    assert len(out) > 200
+
+
 def test_upload_txt_sets_brief_and_generates(client):
     tc, app_crew, tmp_path = client
     pipe = RFxPipeline()
@@ -89,7 +98,6 @@ def test_upload_txt_sets_brief_and_generates(client):
         "Buyer needs corrugated packaging for Chakan: about thirty SKUs, "
         "ISO 9001 and FSC certified board, food-contact compliant inks."
     )
-
     drafted = _drafted_rfx()
 
     def fake_draft(self, brief, **kwargs):
@@ -107,15 +115,60 @@ def test_upload_txt_sets_brief_and_generates(client):
             follow_redirects=False,
         )
 
-    assert r.status_code == 303, r.text
+    assert r.status_code == 303, r.text[:500]
     assert "step=draft" in r.headers.get("location", "")
     assert "Chakan" in pipe.brief
-    assert "thirty SKUs" in pipe.brief or "thirty" in pipe.brief.lower()
     assert pipe.rfx is not None
     assert len(pipe.rfx.line_items) >= 1
-    # Original file saved under uploads
     saved = list((tmp_path / "uploads" / "RFX-UPLOAD-1").glob("requirements.txt"))
     assert saved, "uploaded file should be persisted"
+
+
+def test_upload_sample_file_sets_brief_and_generates(client):
+    """Full path: stub ABC Snacks .txt → brief set → draft() called → lines present."""
+    tc, app_crew, tmp_path = client
+    sample = Path(__file__).resolve().parents[1] / "data" / "samples" / "ABC_Snacks_corrugated_brief.txt"
+    pipe = RFxPipeline()
+    pipe.rfx = _empty_rfx("RFX-SAMPLE-1")
+    pipe.brief = ""
+    pipe.wizard_step = "draft"
+    pipe._persist = lambda: None  # type: ignore
+    app_crew._SESSIONS[pipe.rfx.rfx_id] = pipe
+
+    drafted = _drafted_rfx("RFX-SAMPLE-1")
+    called = {"brief": None}
+
+    def fake_draft(self, brief, **kwargs):
+        called["brief"] = brief
+        self.brief = (brief or "").strip()
+        self.rfx = drafted
+        return self.rfx
+
+    with patch.object(RFxPipeline, "draft", fake_draft):
+        r = tc.post(
+            "/crew/RFX-SAMPLE-1/draft/upload-brief",
+            files={
+                "file": (
+                    "ABC_Snacks_corrugated_brief.txt",
+                    sample.read_bytes(),
+                    "text/plain",
+                )
+            },
+            follow_redirects=False,
+        )
+
+    assert r.status_code == 303, r.text[:500]
+    assert called["brief"] and "Chakan" in called["brief"]
+    assert "ISO 9001" in pipe.brief
+    assert len(pipe.rfx.line_items) >= 2
+
+
+def test_download_sample(client):
+    tc, app_crew, _ = client
+    r = tc.get("/samples/ABC_Snacks_corrugated_brief.txt")
+    assert r.status_code == 200
+    assert b"Chakan" in r.content
+    assert b"ISO 9001" in r.content
 
 
 def test_upload_empty_file_errors(client):

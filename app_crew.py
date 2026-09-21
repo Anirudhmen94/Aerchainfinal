@@ -21,7 +21,6 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.templating import Jinja2Templates  # noqa: E402
 
 from agents.qualification import eligibility_gaps, questionnaire_matrix  # noqa: E402
-from core import ingest  # noqa: E402
 from orchestrator.pipeline import (  # noqa: E402
     DATA_ROOT,
     WIZARD_STEPS,
@@ -667,6 +666,24 @@ def home(request: Request):
     )
 
 
+
+@app.get("/samples/{name}")
+def download_sample(name: str):
+    """Serve stub requirements / demo files from data/samples/."""
+    safe = Path(name).name
+    if safe != name or ".." in name:
+        return _err_html("Invalid sample name.", status=400)
+    path = SAMPLES_DIR / safe
+    if not path.is_file():
+        return _err_html(f"Sample not found: {safe}", status=404)
+    media, _ = mimetypes.guess_type(str(path))
+    return FileResponse(
+        path,
+        media_type=media or "text/plain",
+        filename=safe,
+    )
+
+
 # ── Start / e2e ────────────────────────────────────────────────────────
 
 
@@ -824,10 +841,11 @@ def crew_wizard_next(rfx_id: str):
 
 # Extensions accepted as Draft / Home requirements briefs (not vendor quotes).
 _BRIEF_UPLOAD_EXTS = {".pdf", ".docx", ".txt", ".md", ".csv", ".xlsx", ".xlsm"}
+SAMPLES_DIR = ROOT / "data" / "samples"
 
 
 def _clean_extracted_brief(raw: str) -> str:
-    """Strip ingest location tags so the brief reads as plain requirements text."""
+    """Normalize whitespace; drop common location-tag prefixes from parsers."""
     import re as _re
 
     lines: list[str] = []
@@ -835,14 +853,81 @@ def _clean_extracted_brief(raw: str) -> str:
         s = line.strip()
         if not s or s.startswith("==="):
             continue
-        # Drop [line N], [para N], [page N], [Sheet!A1] style anchors
         s = _re.sub(r"^\[[^\]]+\]\s*", "", s)
-        # XLSX dumps may still have mid-line [Sheet!coord] tokens
         s = _re.sub(r"\s*\[[^\]]+![A-Za-z]+\d+\]\s*", " ", s)
         s = _re.sub(r"\s+", " ", s).strip()
         if s:
             lines.append(s)
     return "\n".join(lines).strip()
+
+
+def _extract_brief_bytes(filename: str, data: bytes) -> str:
+    """Pragmatic text extract without requiring pymupdf (pypdf / docx / openpyxl)."""
+    import io
+    import re as _re
+
+    name = Path(filename or "upload").name
+    suffix = Path(name).suffix.lower()
+
+    if suffix in {".txt", ".md"}:
+        return data.decode("utf-8", errors="replace")
+
+    if suffix == ".csv":
+        return data.decode("utf-8", errors="replace")
+
+    if suffix == ".docx":
+        from docx import Document
+
+        d = Document(io.BytesIO(data))
+        parts = [p.text.strip() for p in d.paragraphs if p.text.strip()]
+        for t in d.tables:
+            for row in t.rows:
+                cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                if cells:
+                    parts.append(" | ".join(cells))
+        return "\n".join(parts)
+
+    if suffix in {".xlsx", ".xlsm"}:
+        from openpyxl import load_workbook
+
+        wb = load_workbook(io.BytesIO(data), data_only=True, read_only=True)
+        parts: list[str] = []
+        for ws in wb.worksheets:
+            parts.append(f"Sheet: {ws.title}")
+            for row in ws.iter_rows(values_only=True):
+                cells = [str(c).strip() for c in row if c not in (None, "")]
+                if cells:
+                    parts.append(" | ".join(cells))
+        return "\n".join(parts)
+
+    if suffix == ".pdf":
+        # Prefer pypdf (in requirements); fall back to pymupdf if present.
+        try:
+            from pypdf import PdfReader
+
+            reader = PdfReader(io.BytesIO(data))
+            parts = []
+            for i, page in enumerate(reader.pages, start=1):
+                t = (page.extract_text() or "").strip()
+                if t:
+                    parts.append(t)
+            return "\n\n".join(parts)
+        except Exception:
+            try:
+                import pymupdf  # optional
+
+                doc = pymupdf.open(stream=data, filetype="pdf")
+                parts = [page.get_text() for page in doc]
+                doc.close()
+                return "\n".join(parts)
+            except Exception as exc:
+                raise ValueError(f"Could not read PDF: {exc}") from exc
+
+    # Last resort: UTF-8
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError(f"Unsupported or unreadable file: {name}") from exc
 
 
 def _brief_text_from_upload(filename: str, data: bytes) -> str:
@@ -856,9 +941,12 @@ def _brief_text_from_upload(filename: str, data: bytes) -> str:
         )
     if not data:
         raise ValueError("Uploaded file is empty.")
-    # .md is plain text; kind_from_name treats it as unknown → UTF-8 decode path.
-    result = ingest.file_to_text(name, data)
-    text = _clean_extracted_brief(result.get("text") or "")
+    raw = _extract_brief_bytes(name, data)
+    text = _clean_extracted_brief(raw) if suffix not in {".txt", ".md"} else raw.strip()
+    # txt/md: keep paragraph breaks; only collapse extreme blank runs
+    if suffix in {".txt", ".md"}:
+        import re as _re
+        text = _re.sub(r"\n{3,}", "\n\n", raw.strip())
     if len(text.strip()) < 10:
         raise ValueError(
             "Could not extract enough text from the file to use as a brief "
