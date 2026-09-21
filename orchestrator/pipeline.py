@@ -841,6 +841,11 @@ class RFxPipeline:
         self.quotes = list(merged.values())
         self.step = "parsed"
         self.wizard_step = "inbox"
+        # Quotes changed — drop stale matrix and rebuild so Compare shows parse results.
+        self.comparison = None
+        self.ensure_comparison(force=True)
+        # Keep buyer on Inbox after Parse all (ensure_comparison does not jump tabs).
+        self.wizard_step = "inbox"
         try:
             write_inbox_reply_eml_files(self)
         except Exception:
@@ -875,6 +880,27 @@ class RFxPipeline:
         return self.quotes
 
     # ── Compare ────────────────────────────────────────────────────────
+
+    def ensure_comparison(self, *, force: bool = False) -> Optional[ComparisonTable]:
+        """Hydrate comparison matrix from parsed quotes without changing wizard_step.
+
+        Parse-all leaves quotes on the pipeline but historically did not build the
+        matrix, so Compare opened empty until a separate Normalize click.  Call
+        this after inbox parse and when entering the Compare tab. Soft-fail on
+        bad/partial extractions so the tab still loads.
+        """
+        if not self.rfx or not self.quotes:
+            return self.comparison
+        if self.comparison is not None and not force:
+            return self.comparison
+        try:
+            self.comparison = normalize(self.rfx, self.quotes)
+            self.step = "normalized"
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "ensure_comparison failed (quotes=%s)", len(self.quotes or [])
+            )
+        return self.comparison
 
     def normalize(self) -> ComparisonTable:
         if not self.rfx:
@@ -2118,6 +2144,10 @@ class RFxPipeline:
                 self.refresh_cover_previews()
             except Exception:
                 pass
+        if step == "compare" and self.quotes and not self.comparison:
+            # Tab click / ?step=compare must show the matrix after inbox parse.
+            self.ensure_comparison()
+            self.wizard_step = "compare"
         self._persist()
         return self.wizard_step
 

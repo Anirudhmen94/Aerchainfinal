@@ -261,3 +261,74 @@ def test_parse_all_preserves_last_valid_quote_when_one_file_fails(tmp_path, monk
 
     assert {q.vendor_id for q in quotes} == {"V01", "V02"}
     assert next(q for q in quotes if q.vendor_id == "V02").lines[0]["unit_price"] == 12
+
+
+def test_parse_all_inbox_hydrates_comparison_matrix(tmp_path, monkeypatch):
+    """After Parse all, Compare must have a matrix from those quotes (no extra click)."""
+    from orchestrator import pipeline as pl
+
+    pipe = RFxPipeline()
+    pipe.rfx = _minimal_rfx("RFX-PARSE-COMPARE")
+    pipe.rfx.vendors = [
+        Vendor(vendor_id="V01", name="PackForge", email="v1@example.com"),
+        Vendor(vendor_id="V02", name="BoxCo", email="v2@example.com"),
+    ]
+    pipe._persist = lambda: None
+    pipe._ensure_inbox_files = lambda: None
+
+    a = tmp_path / "a.json"
+    b = tmp_path / "b.json"
+    a.write_text("{}")
+    b.write_text("{}")
+    pipe.inbox = [
+        InboxMessage(msg_id="m1", vendor_id="V01", path=str(a), filename=a.name),
+        InboxMessage(msg_id="m2", vendor_id="V02", path=str(b), filename=b.name),
+    ]
+
+    def fake_parse(path, vendor_id="", rfx=None):
+        vid = "V01" if Path(path).name == a.name else "V02"
+        price = 10.0 if vid == "V01" else 12.0
+        return ExtractedQuote(
+            vendor_id=vid,
+            source_format="json",
+            lines=[{"line_id": "LI-1", "unit_price": price, "uom": "piece", "currency": "INR"}],
+            questionnaire_answers=[{"id": "Q1", "answer": "Yes"}],
+        )
+
+    monkeypatch.setattr(pl, "parse_one", fake_parse)
+
+    quotes = pipe.parse_all_inbox()
+    assert {q.vendor_id for q in quotes} == {"V01", "V02"}
+    assert pipe.comparison is not None
+    assert len(pipe.comparison.cells) >= 2
+    vendors = {c.vendor_id for c in pipe.comparison.cells}
+    assert {"V01", "V02"} <= vendors
+    prices = {
+        (c.vendor_id, c.line_id): c.unit_price_inr
+        for c in pipe.comparison.cells
+        if c.unit_price_inr is not None
+    }
+    assert prices.get(("V01", "LI-1")) == 10.0
+    assert prices.get(("V02", "LI-1")) == 12.0
+
+
+def test_set_wizard_step_compare_hydrates_from_quotes():
+    """Tab navigation to Compare must build matrix when quotes exist but comparison is None."""
+    pipe = RFxPipeline()
+    pipe.rfx = _minimal_rfx("RFX-TAB-COMPARE")
+    pipe._persist = lambda: None
+    pipe.quotes = [
+        ExtractedQuote(
+            vendor_id="V01",
+            source_format="json",
+            lines=[{"line_id": "LI-1", "unit_price": 9.5, "uom": "piece", "currency": "INR"}],
+            questionnaire_answers=[{"id": "Q1", "answer": "Yes"}],
+        )
+    ]
+    pipe.comparison = None
+
+    pipe.set_wizard_step("compare")
+
+    assert pipe.wizard_step == "compare"
+    assert pipe.comparison is not None
+    assert any(c.vendor_id == "V01" and c.unit_price_inr == 9.5 for c in pipe.comparison.cells)
