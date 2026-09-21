@@ -860,6 +860,9 @@ async def crew_draft_lines(request: Request, rfx_id: str):
     if not pipe.rfx:
         return _not_found_response(rfx_id)
     form = await request.form()
+    scope = str(form.get("scope") or "").strip()
+    if scope:
+        pipe.update_draft_fields(scope=scope)
     # Expect parallel arrays line_id[], description[], qty[], uom[]
     ids = form.getlist("line_id")
     descs = form.getlist("description")
