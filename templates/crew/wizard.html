@@ -992,11 +992,11 @@
   <div class="mb-2 space-y-2 no-print">
     <div class="flex flex-wrap items-center justify-between gap-2">
       <div class="text-xs font-medium text-slate-600 uppercase tracking-wide">Vendors to award (Pass)</div>
-      <span class="text-[10px] text-slate-400">Scroll ← →</span>
+      <span class="text-[10px] text-slate-400">Use ‹ › to scroll</span>
     </div>
     <div class="h-scroll-wrap" data-h-scroll aria-label="Pass vendors eligible for award">
       <button type="button" class="h-scroll-btn" data-h-scroll-prev title="Scroll left" aria-label="Scroll vendors left">‹</button>
-      <div class="h-scroll-track shortlist-strip" data-h-scroll-track style="flex-wrap:nowrap">
+      <div class="h-scroll-track shortlist-strip" data-h-scroll-track>
         {% for row in shortlist_pass %}
         <div class="shortlist-card">
           <div class="font-medium">{{ row.name }}</div>
@@ -1013,7 +1013,7 @@
     <div class="text-xs font-medium text-slate-500 mt-2">Excluded (Fail)</div>
     <div class="h-scroll-wrap" data-h-scroll aria-label="Fail vendors excluded from award">
       <button type="button" class="h-scroll-btn" data-h-scroll-prev title="Scroll left" aria-label="Scroll left">‹</button>
-      <div class="h-scroll-track shortlist-strip" data-h-scroll-track style="flex-wrap:nowrap">
+      <div class="h-scroll-track shortlist-strip" data-h-scroll-track>
         {% for row in shortlist_fail %}
         <div class="excluded-card" title="Failed questionnaire knockouts">
           {{ row.name }} · {{ (row.coverage * 100)|round(0)|int }}%

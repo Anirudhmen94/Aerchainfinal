@@ -112,23 +112,31 @@
     .provisional-banner strong { font-weight:600; }
     .shortlist-strip { display:flex; flex-wrap:wrap; gap:0.5rem; align-items:center; }
 
-    .h-scroll-wrap { display:flex; align-items:center; gap:0.35rem; }
+    .h-scroll-wrap { display:flex; align-items:center; gap:0.4rem; width:100%; }
     .h-scroll-wrap .h-scroll-btn {
-      flex:0 0 auto; width:2rem; height:2rem; border-radius:9999px;
-      border:1px solid #cbd5e1; background:#fff; color:#334155;
-      font-size:1rem; line-height:1; cursor:pointer;
-      box-shadow:0 1px 2px rgba(15,23,42,.06);
+      flex:0 0 auto; width:2.35rem; height:2.35rem; min-width:2.35rem; min-height:2.35rem;
+      border-radius:9999px;
+      border:1px solid #94a3b8; background:#fff; color:#0f172a;
+      font-size:1.35rem; line-height:1; cursor:pointer;
+      box-shadow:0 1px 3px rgba(15,23,42,.12);
+      display:inline-flex; align-items:center; justify-content:center;
+      padding:0;
     }
-    .h-scroll-wrap .h-scroll-btn:hover { background:#f8fafc; border-color:#94a3b8; }
-    .h-scroll-wrap .h-scroll-btn:disabled { opacity:.35; cursor:default; }
+    .h-scroll-wrap .h-scroll-btn:hover:not(:disabled) { background:#f1f5f9; border-color:#64748b; }
+    .h-scroll-wrap .h-scroll-btn:disabled { opacity:.32; cursor:default; }
     .h-scroll-track {
-      display:flex; flex-wrap:nowrap; gap:0.5rem; align-items:stretch;
+      display:flex; flex-wrap:nowrap !important; gap:0.5rem; align-items:stretch;
       overflow-x:auto; scroll-behavior:smooth; -webkit-overflow-scrolling:touch;
-      padding:0.15rem 0.1rem 0.35rem; flex:1; min-width:0;
+      padding:0.15rem 0.1rem 0.35rem; flex:1 1 auto; min-width:0; width:100%;
       scrollbar-width:thin;
     }
+    /* shortlist-strip alone wraps; inside h-scroll it must never wrap so cards overflow */
+    .h-scroll-track.shortlist-strip {
+      flex-wrap:nowrap !important; flex:1 1 auto; min-width:0; width:auto;
+    }
     .h-scroll-track .shortlist-card,
-    .h-scroll-track .excluded-card {
+    .h-scroll-track .excluded-card,
+    .h-scroll-track .award-vendor-chip {
       flex:0 0 auto; min-width:10.5rem; max-width:14rem;
     }
     .award-vendor-chip {
@@ -563,27 +571,53 @@
   function aerchainBindHScroll(root) {
     root = root || document;
     root.querySelectorAll('[data-h-scroll]').forEach(function (wrap) {
-      if (wrap.dataset.hScrollBound === '1') return;
-      wrap.dataset.hScrollBound = '1';
       var track = wrap.querySelector('[data-h-scroll-track]');
       var prev = wrap.querySelector('[data-h-scroll-prev]');
       var next = wrap.querySelector('[data-h-scroll-next]');
       if (!track || !prev || !next) return;
-      function step() { return Math.max(180, Math.floor(track.clientWidth * 0.7)); }
+
+      function step() { return Math.max(200, Math.floor(track.clientWidth * 0.75)); }
       function sync() {
+        var overflow = track.scrollWidth > track.clientWidth + 2;
         var max = track.scrollWidth - track.clientWidth - 2;
-        prev.disabled = track.scrollLeft <= 2;
-        next.disabled = track.scrollLeft >= max;
+        prev.disabled = !overflow || track.scrollLeft <= 2;
+        next.disabled = !overflow || track.scrollLeft >= max;
       }
+      function syncSoon() {
+        sync();
+        if (typeof requestAnimationFrame === 'function') {
+          requestAnimationFrame(function () {
+            sync();
+            requestAnimationFrame(sync);
+          });
+        }
+        setTimeout(sync, 50);
+        setTimeout(sync, 200);
+      }
+
+      if (wrap.dataset.hScrollBound === '1') {
+        syncSoon();
+        return;
+      }
+      wrap.dataset.hScrollBound = '1';
       prev.addEventListener('click', function () {
         track.scrollBy({ left: -step(), behavior: 'smooth' });
+        setTimeout(sync, 80);
       });
       next.addEventListener('click', function () {
         track.scrollBy({ left: step(), behavior: 'smooth' });
+        setTimeout(sync, 80);
       });
       track.addEventListener('scroll', sync, { passive: true });
-      window.addEventListener('resize', sync);
-      sync();
+      window.addEventListener('resize', syncSoon);
+      if (typeof ResizeObserver === 'function') {
+        try {
+          var ro = new ResizeObserver(function () { syncSoon(); });
+          ro.observe(track);
+          wrap._hScrollRO = ro;
+        } catch (e) {}
+      }
+      syncSoon();
     });
   }
   document.addEventListener('DOMContentLoaded', function () { aerchainBindHScroll(); });
