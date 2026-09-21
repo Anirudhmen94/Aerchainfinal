@@ -16,8 +16,7 @@
  class="mb-6 tip-banner" data-tip-key="home" role="note">
   <span class="tip-icon" aria-hidden="true">i</span>
   <div class="tip-body">
-    <strong>Happy path.</strong> Click <em>Open workspace</em> and walk the tabs:
-    Draft → generate → Outbox → send stub → Inbox → seed + parse → Compare → Ask → Award → Audit.
+    <strong>Happy path.</strong> Enter the brief, then <em>Generate line items</em>. Scope and line items stay empty until that click — then they appear together on Draft.
   </div>
   <button type="button" class="tip-dismiss" id="qs-dismiss" aria-label="Dismiss tip">Dismiss</button>
 </div>
@@ -25,16 +24,14 @@
 <section class="grid md:grid-cols-5 gap-6">
   <div class="md:col-span-3 card space-y-4">
     <div>
-      <h1 class="text-2xl font-semibold tracking-tight mb-1">Start a sourcing event</h1>
+      <h1 class="text-2xl font-semibold tracking-tight mb-1">Draft an RFx</h1>
       <p class="section-muted">
-        Free tabs:
-        <strong>Draft | Outbox | Inbox | Compare | Ask | Award | Audit</strong>.
-        Jump anywhere — empty panels explain what’s missing.
+        Brief only until you generate. No scope or line items until Claude returns the draft.
       </p>
     </div>
     <p class="text-xs text-indigo-900/90 rounded-lg border border-indigo-100 bg-indigo-50/80 px-3 py-2">
       Default brief is the Chakan ~30 SKU happy path (ISO / FSC / food-contact knockouts).
-      After Draft → Outbox → Seed inbox → Parse → Compare, Award shows Pass vendors with prices — no hardcoded winners.
+      After generate → Outbox → Seed → Parse → Compare, Award shows Pass vendors with prices — no hardcoded winners.
     </p>
     <form method="post" action="/crew/start" class="space-y-3" id="start-form">
       <label class="block text-sm font-medium">Brief
@@ -52,9 +49,8 @@
         </div>
       </div>
       <input type="hidden" name="scope" value="" />
-      <button class="btn" type="submit" title="Opens the workspace on Draft — walk tabs yourself (recommended for demos)">
-        Open workspace
-        <span class="tip-q" tabindex="0" role="img" aria-label="Draft only — recommended demo path" data-tip="Draft-only start. You drive each tab: generate → Outbox → Inbox → Compare → Award.">?</span>
+      <button class="btn" type="submit" id="start-gen-btn" title="Calls Claude to draft lines, then opens Draft with scope + line items">
+        Generate line items
       </button>
     </form>
   </div>
@@ -65,27 +61,21 @@
       <ul class="space-y-2 text-sm">
         {% for e in events %}
         <li>
-          <a class="text-indigo-600 hover:underline" href="/crew/{{ e.id }}/wizard">{{ e.title }}</a>
+          <a class="text-indigo-600 hover:underline" href="/crew/{{ e.id }}/wizard?step=draft">{{ e.title }}</a>
           <div class="text-xs text-slate-500">{{ e.id }} · tab {{ e.step }} · {{ e.vendors }} vendors</div>
         </li>
         {% endfor %}
       </ul>
       {% else %}
-      <p class="text-sm text-slate-500">No events yet — start a draft above.</p>
+      <p class="text-sm text-slate-500">No events yet — generate a draft from the brief.</p>
       {% endif %}
-    </div>
-    <div class="card text-sm text-slate-600">
-      <h2 class="font-medium text-slate-900 mb-2">Workspace tabs</h2>
-      <ol class="list-decimal list-inside space-y-1">
-        <li>Draft — brief, fields, line items</li>
-        <li>Outbox — preview cover email → stub send</li>
-        <li>Inbox — stub replies → parse</li>
-        <li>Compare — INR matrix + knockouts</li>
-        <li>Ask — live analyst chat</li>
-        <li>Award — per-line picks (+ partial / manager)</li>
-        <li>Audit — decision / freeze log</li>
-      </ol>
     </div>
   </div>
 </section>
+<script>
+  document.getElementById('start-form')?.addEventListener('submit', function () {
+    const b = document.getElementById('start-gen-btn');
+    if (b) { b.disabled = true; b.textContent = 'Generating…'; }
+  });
+</script>
 {% endblock %}

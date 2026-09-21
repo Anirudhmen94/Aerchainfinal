@@ -453,7 +453,8 @@ class RFxPipeline:
         self.rfx = RFx(
             rfx_id=rid,
             title=title.strip() or "Untitled RFx",
-            scope=scope.strip() or brief.strip()[:500],
+            # Keep scope empty until Generate fills it with the drafted package
+            scope=scope.strip() if scope and scope.strip() else "",
             terms=terms.strip()
             or "INR per piece, delivered, exclusive of GST. Payment 45 days.",
             line_items=[],

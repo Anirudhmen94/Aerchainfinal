@@ -685,6 +685,19 @@ def crew_start(
     try:
         pipe = RFxPipeline()
         pipe.start_draft(brief, title=title, scope=scope, terms=terms)
+        # Generate immediately so Draft opens with scope + line items together
+        # (no empty "Open workspace" interstitial).
+        try:
+            pipe.draft(pipe.brief or brief)
+        except Exception as gen_exc:
+            log.exception("start generate failed")
+            _save(pipe)
+            return HTMLResponse(
+                f"<div class='err'>Generate failed: {gen_exc}</div>"
+                f"<p class='text-sm mt-2'><a href='/crew/{pipe.rfx.rfx_id}/wizard?step=draft'>"
+                f"Open Draft to retry</a></p>",
+                status_code=400,
+            )
         _save(pipe)
         return RedirectResponse(f"/crew/{pipe.rfx.rfx_id}/wizard?step=draft", status_code=303)
     except Exception as exc:
