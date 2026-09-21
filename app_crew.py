@@ -400,9 +400,12 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
             eligibility_reasons_by_line = {}
 
     # Auto-populate Award with cheapest Pass split when empty (buyer can override).
+    # Only on the Award tab — running this on Draft/Compare during reverse nav used to
+    # mutate awards + persist and (previously) yank wizard_step back to "award".
     try:
-        if pipe.comparison and not pipe.is_frozen:
+        if step == "award" and pipe.comparison and not pipe.is_frozen:
             pipe.ensure_auto_awards()
+            _save(pipe)
     except Exception:
         pass
 
@@ -447,7 +450,8 @@ def _wizard_ctx(pipe: RFxPipeline) -> dict[str, Any]:
         "vendors_in_matrix": vendors_in_matrix,
         "qual_map": qual_map,
         "award_summary": pipe.award_summary() if pipe.awards or pipe.award_validation else None,
-        "snapshot": pipe.snapshot(),
+        # Round-trip via default=str so Jinja |tojson never 500s on Path/datetime/etc.
+        "snapshot": json.loads(json.dumps(pipe.snapshot(), default=str)),
         "session_snap_json": json.dumps(pipe.snapshot(), default=str),
         "evidence_by_vendor": evidence_by_vendor,
         "vendor_sources": vendor_sources,
@@ -561,11 +565,16 @@ async def crew_rehydrate(request: Request):
     if not pipe.rfx or pipe.rfx.rfx_id != rid:
         return JSONResponse({"error": "rfx_id_mismatch"}, status_code=400)
     _save(pipe)
-    redirect = f"/crew/{rid}/wizard"
+    # Land on the snapshot's tab (or an explicit step) so reverse-nav after cold
+    # start does not bounce the buyer to a blank Draft.
+    step = str(body.get("wizard_step") or getattr(pipe, "wizard_step", "") or "draft")
+    if step not in WIZARD_STEPS:
+        step = pipe.wizard_step if pipe.wizard_step in WIZARD_STEPS else "draft"
+    redirect = f"/crew/{rid}/wizard?step={step}"
     accept = (request.headers.get("accept") or "").lower()
     if "text/html" in accept and "application/json" not in accept:
         return RedirectResponse(redirect, status_code=303)
-    return JSONResponse({"ok": True, "rfx_id": rid, "redirect": redirect})
+    return JSONResponse({"ok": True, "rfx_id": rid, "redirect": redirect, "step": step})
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -788,7 +797,10 @@ def crew_wizard(request: Request, rfx_id: str, step: Optional[str] = None):
         pipe.set_wizard_step(step)
         _save(pipe)
     # After inbox parse, Compare must show the matrix without a second click.
-    if (step or pipe.wizard_step) == "compare" or (pipe.quotes and not pipe.comparison):
+    # Gate to the compare tab only — never rebuild/hang comparison when the buyer
+    # navigates backwards to Draft/Send/Inbox/Ask/Award (reverse-nav safe).
+    active = step or pipe.wizard_step
+    if active == "compare":
         try:
             pipe.ensure_comparison()
             _save(pipe)
@@ -1398,6 +1410,7 @@ def crew_award_suggest(rfx_id: str):
         return _not_found_response(rfx_id)
     try:
         pipe.suggest_awards()
+        pipe.wizard_step = "award"
     except Exception as exc:
         return HTMLResponse(f"<div class='err'>{exc}</div>", status_code=400)
     _save(pipe)

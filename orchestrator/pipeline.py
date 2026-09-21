@@ -1110,7 +1110,10 @@ class RFxPipeline:
                 self._persist()
             return False
         try:
+            prev_step = self.wizard_step
             self.suggest_awards()
+            # Preserve the tab the buyer is on (reverse-nav safe).
+            self.wizard_step = prev_step
             return True
         except Exception:
             return False
@@ -1724,7 +1727,8 @@ class RFxPipeline:
         self.suggested_awards = dict(cleaned)
         self.award_validation = result
         self.step = "awarded"
-        self.wizard_step = "award"
+        # Do NOT set wizard_step here — auto-fill from _wizard_ctx / ensure_auto_awards
+        # must not yank the buyer off Draft/Compare/Ask when navigating backwards.
         n = len(cleaned)
         total = (result.get("totals") or {}).get("grand_total_inr") or (
             result.get("totals") or {}
@@ -2154,8 +2158,16 @@ class RFxPipeline:
             except Exception:
                 pass
         if step == "compare" and self.quotes:
-            # Tab click / ?step=compare must show latest parse (incl. custom uploads).
-            self.ensure_comparison(force=True)
+            # Build matrix if missing. Do NOT force-rebuild on every tab visit —
+            # reverse nav Award→Compare was wiping a good comparison (and hanging
+            # Draft renders that assumed awards/compare state). Inbox parse/continue
+            # already force-hydrates after new uploads.
+            try:
+                self.ensure_comparison(force=self.comparison is None)
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "ensure_comparison on compare tab switch failed"
+                )
             self.wizard_step = "compare"
         self._persist()
         return self.wizard_step
