@@ -44,3 +44,25 @@ def test_set_wizard_step_compare_hydrates():
     assert called["n"] == 1
     assert pipe.wizard_step == "compare"
     assert pipe.comparison is not None
+
+
+def test_custom_upload_is_in_inbox_for_parse_all(tmp_path):
+    """Uploaded file becomes an inbox message so Parse all can include it."""
+    from orchestrator.pipeline import RFxPipeline, InboxMessage
+    from unittest.mock import MagicMock
+
+    pipe = RFxPipeline.__new__(RFxPipeline)
+    pipe.rfx = MagicMock()
+    pipe.rfx.vendors = []
+    pipe.rfx.rfx_id = "RFX-TEST"
+    pipe.inbox = []
+    pipe.quotes = []
+    pipe.comparison = None
+    pipe._persist = lambda: None  # type: ignore
+    pipe._inbox_dir = lambda: tmp_path  # type: ignore
+
+    f = tmp_path / "buyer-custom.xlsx"
+    f.write_bytes(b"fake")
+    msg = pipe.add_inbox_upload(f, vendor_id="")
+    assert msg.status == "new"
+    assert any(Path(m.path).name == "buyer-custom.xlsx" for m in pipe.inbox)

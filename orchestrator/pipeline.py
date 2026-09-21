@@ -776,6 +776,9 @@ class RFxPipeline:
             ] + [quote]
             self.step = "parsed"
             self.wizard_step = "inbox"
+            self.comparison = None
+            self.ensure_comparison(force=True)
+            self.wizard_step = "inbox"
             try:
                 write_inbox_reply_eml_files(self)
             except Exception:
@@ -2147,9 +2150,9 @@ class RFxPipeline:
                 self.refresh_cover_previews()
             except Exception:
                 pass
-        if step == "compare" and self.quotes and not self.comparison:
-            # Tab click / ?step=compare must show the matrix after inbox parse.
-            self.ensure_comparison()
+        if step == "compare" and self.quotes:
+            # Tab click / ?step=compare must show latest parse (incl. custom uploads).
+            self.ensure_comparison(force=True)
             self.wizard_step = "compare"
         self._persist()
         return self.wizard_step
