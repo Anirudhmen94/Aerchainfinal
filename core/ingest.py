@@ -15,7 +15,10 @@ import io
 import mimetypes
 import re
 
-import pymupdf
+try:
+    import pymupdf
+except ImportError:  # pragma: no cover - optional on Vercel
+    pymupdf = None
 from docx import Document
 from openpyxl import load_workbook
 
@@ -106,21 +109,38 @@ def _pdf_page_rows(page, y_tol: float = 3.0) -> list[str]:
 
 def pdf_to_text(data: bytes) -> tuple[str, bool]:
     """Returns (text, has_text_layer)."""
-    doc = pymupdf.open(stream=data, filetype="pdf")
+    if pymupdf is not None:
+        doc = pymupdf.open(stream=data, filetype="pdf")
+        out = []
+        total = 0
+        for i, page in enumerate(doc, start=1):
+            rows = _pdf_page_rows(page)
+            total += sum(len(r) for r in rows)
+            out.append(f"=== [page {i}] ===")
+            for line in rows:
+                if line.strip():
+                    out.append(f"[page {i}] {line}")
+        doc.close()
+        return "\n".join(out), total > 40
+
+    from pypdf import PdfReader
+
+    reader = PdfReader(io.BytesIO(data))
     out = []
     total = 0
-    for i, page in enumerate(doc, start=1):
-        rows = _pdf_page_rows(page)
-        total += sum(len(r) for r in rows)
+    for i, page in enumerate(reader.pages, start=1):
+        page_text = page.extract_text() or ""
         out.append(f"=== [page {i}] ===")
-        for line in rows:
+        for line in page_text.splitlines():
             if line.strip():
+                total += len(line)
                 out.append(f"[page {i}] {line}")
-    doc.close()
     return "\n".join(out), total > 40
 
 
 def pdf_page_images(data: bytes, max_pages: int = 4, zoom: float = 1.6) -> list[bytes]:
+    if pymupdf is None:
+        return []
     doc = pymupdf.open(stream=data, filetype="pdf")
     imgs = []
     for page in list(doc)[:max_pages]:
@@ -198,12 +218,19 @@ def file_to_text(name: str, data: bytes, kind: str | None = None, log: list | No
         return {"text": csv_to_text(data), "method": "csv rows"}
     if kind == "pdf":
         text, has_layer = pdf_to_text(data)
+        method = "pymupdf text layer" if pymupdf is not None else "pypdf text layer"
         if has_layer:
-            return {"text": text, "method": "pymupdf text layer"}
+            return {"text": text, "method": method}
+        images = pdf_page_images(data)
+        if not images:
+            return {
+                "text": text or "[pdf] No extractable text layer (pymupdf unavailable).",
+                "method": method,
+            }
         parts = []
         caveats = []
         leg = []
-        for i, png in enumerate(pdf_page_images(data), start=1):
+        for i, png in enumerate(images, start=1):
             t = image_to_text(png, "image/png", log=log)
             parts.append(f"=== [page {i}] (vision transcription) ===\n" + t["text"].replace("[image line", f"[page {i} line"))
             caveats.append(t.get("caveats", ""))
