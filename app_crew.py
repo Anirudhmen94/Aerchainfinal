@@ -997,8 +997,14 @@ def crew_inbox_parse_all(rfx_id: str):
         return _not_found_response(rfx_id)
     try:
         pipe.parse_all_inbox()
+        # Land on Compare with normalized matrix already built.
+        if pipe.quotes and not pipe.comparison:
+            pipe.normalize()
+        elif pipe.comparison:
+            pipe.wizard_step = "compare"
         _save(pipe)
-        return RedirectResponse(f"/crew/{rfx_id}/wizard?step=inbox", status_code=303)
+        step = "compare" if pipe.comparison else "inbox"
+        return RedirectResponse(f"/crew/{rfx_id}/wizard?step={step}", status_code=303)
     except Exception as exc:
         log.exception("parse-all failed")
         return _err_html(f"Parse all failed: {exc}", status=400)

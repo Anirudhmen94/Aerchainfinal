@@ -843,12 +843,15 @@ class RFxPipeline:
             merged[vendor_key] = quote
         self.quotes = list(merged.values())
         self.step = "parsed"
-        self.wizard_step = "inbox"
-        # Quotes changed — drop stale matrix and rebuild so Compare shows parse results.
+        # Parse all → normalize → Compare matrix (assignment demo path).
         self.comparison = None
-        self.ensure_comparison(force=True)
-        # Keep buyer on Inbox after Parse all (ensure_comparison does not jump tabs).
-        self.wizard_step = "inbox"
+        if self.quotes:
+            # Use the real normalizer (raises on hard failure; no silent empty matrix).
+            self.comparison = normalize(self.rfx, self.quotes)
+            self.step = "normalized"
+            self.wizard_step = "compare"
+        else:
+            self.wizard_step = "inbox"
         try:
             write_inbox_reply_eml_files(self)
         except Exception:

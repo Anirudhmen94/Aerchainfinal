@@ -310,6 +310,8 @@ def test_parse_all_inbox_hydrates_comparison_matrix(tmp_path, monkeypatch):
     }
     assert prices.get(("V01", "LI-1")) == 10.0
     assert prices.get(("V02", "LI-1")) == 12.0
+    assert pipe.wizard_step == "compare"
+    assert pipe.step == "normalized"
 
 
 def test_set_wizard_step_compare_hydrates_from_quotes():
