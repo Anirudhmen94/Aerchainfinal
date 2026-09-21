@@ -617,16 +617,14 @@ class RFxPipeline:
         if not self.rfx:
             return
         inbox_root = self._inbox_dir()
-        has_files = False
-        if inbox_root.exists():
-            has_files = any(
-                p.is_file()
-                and not p.name.startswith(".")
-                and not p.name.endswith(".extract.json")
-                for p in inbox_root.iterdir()
-            )
-        if not has_files:
-            seed_inbox(inbox_dir=inbox_root, vendor_dir=VENDOR_DIR)
+        # Vercel's /tmp filesystem is instance-local.  A restored snapshot can
+        # therefore contain five seeded Inbox rows while the new instance has
+        # only a recently uploaded file.  Checking for "any file" used to skip
+        # fixture restoration in that state, which made Parse all discard the
+        # valid seeded quotes and left Compare empty.  Seeding is idempotent and
+        # copies only the known demo files, so always restore them before paths
+        # are remapped.  Custom uploads already in the directory are untouched.
+        seed_inbox(inbox_dir=inbox_root, vendor_dir=VENDOR_DIR)
         by_name = {
             p.name: p
             for p in inbox_root.iterdir()
@@ -801,6 +799,9 @@ class RFxPipeline:
             self.seed_inbox()
         quotes: list[ExtractedQuote] = []
         errors: list[str] = []
+        existing_by_vendor = {
+            str(q.vendor_id): q for q in (self.quotes or []) if str(q.vendor_id or "")
+        }
         # Prefer per-message parse so one bad LLM/json blob cannot abort the batch
         for msg in list(self.inbox):
             try:
@@ -818,9 +819,26 @@ class RFxPipeline:
                 msg.error = str(exc)
                 label = getattr(msg, "filename", None) or Path(getattr(msg, "path", "") or "").name or msg.msg_id
                 errors.append(f"{label}: {exc}")
+                # A temporary upload may disappear between Vercel instances.
+                # Keep its last successfully extracted quote instead of letting
+                # one missing/bad file erase otherwise valid comparison data.
+                prior_vendor_id = str(
+                    getattr(msg, "parsed_vendor_id", "")
+                    or getattr(msg, "vendor_id", "")
+                    or ""
+                )
+                prior = existing_by_vendor.get(prior_vendor_id)
+                if prior is not None:
+                    quotes.append(prior)
         if not quotes and errors:
             raise RuntimeError("; ".join(errors[:3]))
-        self.quotes = quotes
+        # One vendor can have more than one Inbox message.  The latest
+        # successful parse wins, while retained fallbacks fill only gaps.
+        merged: dict[str, ExtractedQuote] = {}
+        for quote in quotes:
+            vendor_key = str(quote.vendor_id or "UNKNOWN")
+            merged[vendor_key] = quote
+        self.quotes = list(merged.values())
         self.step = "parsed"
         self.wizard_step = "inbox"
         try:

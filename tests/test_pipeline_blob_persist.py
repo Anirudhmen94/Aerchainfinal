@@ -9,7 +9,7 @@ import pytest
 
 from core import storage
 from orchestrator.pipeline import RFxPipeline, STORE_DIR, load_pipeline
-from shared_models import LineItem, QuestionnaireItem, RFx, Vendor
+from shared_models import ExtractedQuote, InboxMessage, LineItem, QuestionnaireItem, RFx, Vendor
 
 
 def _minimal_rfx(rfx_id: str = "RFX-TEST-BLOB") -> RFx:
@@ -173,3 +173,91 @@ def test_ensure_inbox_files_reseeds_empty_dir(tmp_path, monkeypatch):
     assert inbox_root.exists()
     assert any(inbox_root.iterdir())
     assert Path(pipe.inbox[0].path).exists()
+
+
+def test_ensure_inbox_files_restores_seed_files_when_custom_upload_exists(tmp_path, monkeypatch):
+    """A custom upload must not prevent cold-start restoration of seeded replies."""
+    from orchestrator import pipeline as pl
+
+    inbox_root = tmp_path / "inbox" / "RFX-SEED-WITH-UPLOAD"
+    inbox_root.mkdir(parents=True)
+    (inbox_root / "buyer-upload.csv").write_text("line_id,unit_price\nLI-1,10\n")
+
+    vendor_root = tmp_path / "vendor-responses"
+    vendor_root.mkdir()
+    fixture = vendor_root / "V01_ignore_template.xlsx"
+    fixture.write_bytes(b"fixture")
+    restored_name = "inbound_V01_ignore_template.xlsx"
+
+    monkeypatch.setattr(pl, "INBOX_DIR", tmp_path / "inbox")
+    monkeypatch.setattr(pl, "VENDOR_DIR", vendor_root)
+
+    pipe = RFxPipeline()
+    pipe.rfx = _minimal_rfx("RFX-SEED-WITH-UPLOAD")
+    pipe.inbox = [
+        InboxMessage(
+            msg_id="seed-msg",
+            vendor_id="V01",
+            path=str(inbox_root / restored_name),
+            filename=restored_name,
+        ),
+        InboxMessage(
+            msg_id="upload-msg",
+            vendor_id="V01",
+            path=str(inbox_root / "buyer-upload.csv"),
+            filename="buyer-upload.csv",
+        ),
+    ]
+
+    pipe._ensure_inbox_files()
+
+    assert (inbox_root / restored_name).exists()
+    assert (inbox_root / "buyer-upload.csv").exists()
+    assert Path(pipe.inbox[0].path).exists()
+
+
+def test_parse_all_preserves_last_valid_quote_when_one_file_fails(tmp_path, monkeypatch):
+    """A vanished custom upload cannot wipe a previously parsed vendor quote."""
+    from orchestrator import pipeline as pl
+
+    pipe = RFxPipeline()
+    pipe.rfx = _minimal_rfx("RFX-PARSE-MERGE")
+    pipe._persist = lambda: None
+    pipe._ensure_inbox_files = lambda: None
+
+    good = tmp_path / "V01-good.json"
+    good.write_text("{}")
+    missing = tmp_path / "custom-upload.csv"
+    pipe.inbox = [
+        InboxMessage(msg_id="good", vendor_id="V01", path=str(good), filename=good.name),
+        InboxMessage(
+            msg_id="missing",
+            vendor_id="V02",
+            parsed_vendor_id="V02",
+            path=str(missing),
+            filename=missing.name,
+            status="parsed",
+        ),
+    ]
+    prior = ExtractedQuote(
+        vendor_id="V02",
+        source_format="csv",
+        lines=[{"line_id": "LI-1", "unit_price": 12, "uom": "piece"}],
+    )
+    pipe.quotes = [prior]
+
+    def fake_parse(path, vendor_id="", rfx=None):
+        if Path(path).name == good.name:
+            return ExtractedQuote(
+                vendor_id="V01",
+                source_format="json",
+                lines=[{"line_id": "LI-1", "unit_price": 10, "uom": "piece"}],
+            )
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(pl, "parse_one", fake_parse)
+
+    quotes = pipe.parse_all_inbox()
+
+    assert {q.vendor_id for q in quotes} == {"V01", "V02"}
+    assert next(q for q in quotes if q.vendor_id == "V02").lines[0]["unit_price"] == 12
